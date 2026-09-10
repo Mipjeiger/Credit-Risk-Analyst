@@ -48,12 +48,12 @@
 * [ ] Evaluate class distribution and potential imbalance.
 * [ ] Track precision, recall, F1-score, confusion matrix, and ROC-AUC where applicable.
 
-## 5. LLM-Based Merchant Risk Detection
+## 5. LLM-Based Merchant Risk Decisioning Detection 
 
 * [ ] Integrate an **LLM layer** to support merchant risk detection, investigation, decision explanations, fraud prediction.
 * [ ] Combine structured ML predictions to investigate structure risk outputs
     * `fraud risk with flag with explanation`
-    * `risk score confidence within recommend action`
+    * `risk level confidence on policy states within recommend action`
     * `recommendation to handle business problem on critical anomaly detection`
 * [ ] Using **RAG** to retrieve relevant policies, risk rules, historical cases, and compliance knowledge before generating conclusions.
 * [ ] Develop significant threshold to prevent hallucination
