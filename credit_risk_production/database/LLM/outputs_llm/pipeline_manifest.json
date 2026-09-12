@@ -1,0 +1,25 @@
+{
+  "pipeline_name": "credit_risk_agentic_rag",
+  "version": "1.0.0",
+  "created_at": "2026-09-11T15:36:04.166512+00:00",
+  "artifacts": {
+    "rag_config": "rag_config.json",
+    "model_bundle": "model_artifacts/model_bundle.joblib",
+    "model_features": "model_artifacts/model_features.json",
+    "chroma_dir": "chroma_store"
+  },
+  "requires_env": [
+    "HUGGINGFACE_API_KEY",
+    "GROQ_API_KEY"
+  ],
+  "llm_routing": {
+    "primary": {
+      "provider": "huggingface",
+      "model": "Qwen/Qwen2.5-Coder-32B-Instruct"
+    },
+    "fallback": {
+      "provider": "groq",
+      "model": "openai/gpt-oss-20b"
+    }
+  }
+}
