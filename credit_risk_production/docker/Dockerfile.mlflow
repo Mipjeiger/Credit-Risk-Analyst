@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir mlflow==3.0.1 psycopg2-binary==2.9.7 boto3==1.28.0
+
+EXPOSE 5000
+
+CMD mlflow server \
+    --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB} \
+    --default-artifact-root /mlartifacts \
+    --host 0.0.0.0 --port 5000 --allowed-hosts '*'

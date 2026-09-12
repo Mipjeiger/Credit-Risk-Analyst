@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/api.txt ./requirements/api.txt
+RUN pip install --no-cache-dir -r requirements/api.txt
+
+# Copy the application code
+COPY app/ ./app/
+COPY ml/ ./ml/
+COPY llmops/ ./llmops/
+COPY database/LLM/ ./database/LLM/
+
+ENV PYTHONPATH=/app
+EXPOSE 8000
+
+HEALTHCHECK CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
