@@ -1,0 +1,11 @@
+.git
+.venv
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.joblib
+*.parquet
+*.csv
+.env
+credit_risk_production/database/LLM/outputs_llm/model_artifacts/model_bundle.joblib
