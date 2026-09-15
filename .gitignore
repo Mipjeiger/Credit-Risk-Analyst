@@ -8,3 +8,4 @@ credit_risk_production/k8s/api-secrets.yaml
 credit_risk_production/k8s/mlflow-secret.yaml
 credit_risk_production/k8s/postgres-secret.yaml
 credit_risk_production/k8s/grafana-secrest.yaml
+.vscode
