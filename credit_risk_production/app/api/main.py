@@ -10,3 +10,17 @@ app = FastAPI(
     version="1.0.0",
     description="ML risk scoring + LLM-powered RAG decisions",
 )
+
+# Include API routes
+app.include_router(health.router)
+app.include_router(predict.router)
+app.include_router(decide.router)
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+@app.get("/")
+def root():
+    return {"service": "Credit Risk API",
+            "version": "1.0.0"}

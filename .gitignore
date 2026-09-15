@@ -1,3 +1,10 @@
 .env
 **DS_store
 credit_risk_production/.env
+credit_risk_production/k8s/postgres.yaml
+credit_risk_production/k8s/grafana.yaml
+credit_risk_production/k8s/mlflow-secret.
+credit_risk_production/k8s/api-secrets.yaml
+credit_risk_production/k8s/mlflow-secret.yaml
+credit_risk_production/k8s/postgres-secret.yaml
+credit_risk_production/k8s/grafana-secrest.yaml
