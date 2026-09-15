@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-from app.api.routes import health, predict, decide
+from app.api.routes import health, predict, decide, llm
 from app.api.config import settings
 
 # Build FastAPI app
@@ -15,6 +15,7 @@ app = FastAPI(
 app.include_router(health.router)
 app.include_router(predict.router)
 app.include_router(decide.router)
+app.include_router(llm.router)
 
 @app.get("/metrics")
 def metrics():
