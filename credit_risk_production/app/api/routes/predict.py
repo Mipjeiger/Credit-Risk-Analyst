@@ -1,0 +1,57 @@
+import time
+import pandas as pd
+from typing import Literal, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.schemas import CustomerFeatures, PredictResponse
+from app.api.dependencies import get_rag
+from app.api.metrics import REQUEST_COUNT, REQUEST_LATENCY, ML_PREDICTIONS, RISK_SCORE_HIST, MODEL_LOADED
+
+# Define allowed model choices matching on model files keys
+ModelType = Literal[
+    "Logistic Regression",
+    "Random Forest",
+    "Gradient Boosting",
+    "XGBoost",
+    "K-Nearest Neighbors",
+    "Decision Tree"
+]
+
+router = APIRouter(tags=["predict"])
+
+@router.post("/predict", response_model=PredictResponse)
+def predict(
+    payload: CustomerFeatures, 
+    model_name: Optional[ModelType] = Query(
+        default=None,
+        description="Optional model name to use for prediction. If not provided, the default model will be used."
+    ),
+    rag=Depends(get_rag)
+):
+    start = time.time()
+
+    try:
+        # Mark model as loaded during inference execution
+        MODEL_LOADED.set(1)
+
+        row = pd.Series(payload.features)
+
+        # Predict scoring using selected model
+        ml = rag.score(row, model_name=model_name)
+
+        # Record metrics
+        RISK_SCORE_HIST.observe(ml["primary_risk_probability"])
+        ML_PREDICTIONS.labels(
+            model_name=ml.get("model_used", model_name),
+            decision_route="PREDICT",
+        ).inc()
+
+        # Track success with matching status="200" label key
+        REQUEST_COUNT.labels(endpoint="/predict", method="POST", status="200").inc()
+        return PredictResponse(**ml)
+
+    except Exception as e:
+        REQUEST_COUNT.labels(endpoint="/predict", method="POST", status="500").inc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        REQUEST_LATENCY.labels(endpoint="/predict").observe(time.time() - start)
