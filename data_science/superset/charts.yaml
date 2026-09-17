@@ -1,0 +1,90 @@
+# data_science/superset/charts.yaml
+
+datasets:
+  - { schema: credit_risk, table: v_model_scoreboard }
+  - { schema: credit_risk, table: v_monitoring_latest }
+  - { schema: credit_risk, table: v_monitoring_trend }
+  - { schema: credit_risk, table: v_monitoring_alerts }
+  - { schema: credit_risk, table: v_psi_heatmap }
+  - { schema: credit_risk, table: v_approval_distribution }
+  - { schema: credit_risk, table: v_score_band }
+
+dashboard:
+  title: "Credit Risk — Model Monitoring"
+
+charts:
+  # 1. Champion scoreboard — ROC AUC ranked
+  - name: "Model Scoreboard (ROC AUC)"
+    dataset: v_model_scoreboard
+    viz_type: table
+    description: "All challengers ranked by ROC AUC."
+    params:
+      query_mode: aggregate
+      groupby: [model_name]
+      metrics: [roc_auc, f1, precision, recall, accuracy]
+      order_desc: true
+      row_limit: 20
+
+  # 2. Gini trend over time
+  - name: "Gini Over Time"
+    dataset: v_monitoring_trend
+    viz_type: line
+    description: "Monthly Gini per model vs threshold."
+    params:
+      x_axis: scored_at
+      time_grain_sqla: P1M
+      granularity_sqla: scored_at
+      metrics: [gini]
+      groupby: [model_name]
+      row_limit: 1000
+
+  # 3. KS trend
+  - name: "KS Over Time"
+    dataset: v_monitoring_trend
+    viz_type: line
+    params:
+      x_axis: scored_at
+      time_grain_sqla: P1M
+      granularity_sqla: scored_at
+      metrics: [ks]
+      groupby: [model_name]
+
+  # 4. PSI heatmap — model × month
+  - name: "PSI Heatmap"
+    dataset: v_psi_heatmap
+    viz_type: heatmap
+    description: "Model drift; darker = higher PSI."
+    params:
+      x_axis: month
+      y_axis: model_name
+      metric: psi
+      linear_color_scheme: blue_white_yellow
+
+  # 5. Monitoring alerts table
+  - name: "Active Alerts"
+    dataset: v_monitoring_alerts
+    viz_type: table
+    description: "Models breaching Gini / KS / PSI thresholds."
+    params:
+      query_mode: raw
+      all_columns: [model_name, scored_at, status, gini, gini_min, ks, ks_min, psi, psi_max]
+      row_limit: 100
+
+  # 6. Approval distribution
+  - name: "Approval Distribution"
+    dataset: v_approval_distribution
+    viz_type: pie
+    params:
+      metric: applications
+      groupby: [approved_flag]
+      donut: true
+
+  # 7. Score band × approval
+  - name: "Score Band by Approval"
+    dataset: v_score_band
+    viz_type: bar
+    params:
+      metrics: [applications]
+      groupby: [score_band]
+      columns: [approved_flag]
+      row_limit: 100
