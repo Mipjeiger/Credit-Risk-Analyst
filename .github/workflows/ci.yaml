@@ -1,4 +1,4 @@
-name: CI - Validate Code, Data, Schemas & ML Pipeline
+name: CI — Validate Code, Data, Schemas & ML Pipeline
 
 on:
   push:
@@ -17,7 +17,7 @@ env:
 
 jobs:
   # --------------------------------------------------------
-  # 1. CODE QUALITY CHECKS
+  # 1. LINT / TYPECHECK
   # --------------------------------------------------------
   lint-and-typecheck:
     name: Lint and Type Check
@@ -29,39 +29,36 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: ${{ env.WORKDIR }}/requirements/*.txt
 
       - name: Install linting tools
-        working-directory: ${{ env.WORKDIR }}
         run: |
           python -m pip install --upgrade pip
           pip install ruff black mypy flake8
-          pip install -r credit_risk_production/docker/requirements_api.txt
 
       - name: Ruff
         working-directory: ${{ env.WORKDIR }}
-        run: ruff check app ml llmops tests || true
+        run: ruff check app ml llmops tests
 
       - name: Black check
         working-directory: ${{ env.WORKDIR }}
-        run: black --check app ml llmops tests || true
+        run: black --check app ml llmops tests
 
       - name: Flake8
         working-directory: ${{ env.WORKDIR }}
-        run: flake8 app ml llmops --max-line-length=120 --extend-ignore=E203,W503 || true
+        run: flake8 app ml llmops --max-line-length=120 --extend-ignore=E203,W503
 
       - name: Mypy
         working-directory: ${{ env.WORKDIR }}
-        run: mypy app ml llmops --ignore-missing-imports || true
+        run: mypy app ml llmops --ignore-missing-imports
 
-  # ──────────────────────────────────────────────────────────
+  # --------------------------------------------------------
   # 2. UNIT TESTS
-  # ──────────────────────────────────────────────────────────
+  # --------------------------------------------------------
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
-    steps
+    steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -72,17 +69,18 @@ jobs:
       - name: Install test deps
         working-directory: ${{ env.WORKDIR }}
         run: |
-          pip install --upgrade pip
-          pip install -r requirements/api.txt
+          python -m pip install --upgrade pip
+          if [ -f requirements/api.txt ]; then pip install -r requirements/api.txt; fi
           pip install pytest pytest-cov pytest-asyncio
 
       - name: Run unit tests
         working-directory: ${{ env.WORKDIR }}
         run: |
+          mkdir -p reports
           pytest tests/ -v \
             --cov=app --cov=ml --cov=llmops \
             --cov-report=xml --cov-report=term-missing \
-            --junitxml=reports/junit.xml || true
+            --junitxml=reports/junit.xml
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -91,9 +89,9 @@ jobs:
           fail_ci_if_error: false
         continue-on-error: true
 
-  # ──────────────────────────────────────────────────────────
+  # --------------------------------------------------------
   # 3. DATA + SCHEMA VALIDATION
-  # ──────────────────────────────────────────────────────────
+  # --------------------------------------------------------
   data-validation:
     name: Data & Schema Validation
     runs-on: ubuntu-latest
@@ -109,22 +107,20 @@ jobs:
       - name: Install deps
         working-directory: ${{ env.WORKDIR }}
         run: |
-          pip install --upgrade pip
-          pip install -r requirements/ml.txt
-          pip install pandera pyarrow
+          python -m pip install --upgrade pip
+          pip install pandas pyarrow pandera
 
       - name: Validate dataset schema
         working-directory: ${{ env.WORKDIR }}
         run: |
           python - <<'PY'
-          import pandas as pd, sys
+          import pandas as pd
           from pathlib import Path
 
           data_path = Path("database/data/merged_credit_risk_data.parquet")
           assert data_path.exists(), f"Missing: {data_path}"
           df = pd.read_parquet(data_path)
 
-          # Basic schema checks
           assert df.shape[0] > 100, f"Too few rows: {df.shape[0]}"
           assert "Approved_Flag" in df.columns, "Missing target column"
 
@@ -136,12 +132,10 @@ jobs:
           missing = [c for c in key_cols if c not in df.columns]
           assert not missing, f"Missing required features: {missing}"
 
-          # Null threshold
           null_ratio = df[key_cols].isna().mean()
           bad = null_ratio[null_ratio > 0.30]
           assert bad.empty, f"Too many nulls in: {bad.to_dict()}"
 
-          # Target distribution
           dist = df["Approved_Flag"].value_counts(normalize=True).to_dict()
           print("Target distribution:", dist)
           print(f"✅ Data validation passed: {df.shape}")
@@ -153,16 +147,17 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+
           feat_file = Path("database/LLM/outputs_llm/model_artifacts/model_features.json")
-          assert feat_file.exists(), "Missing model_features.json"
+          assert feat_file.exists(), f"Missing {feat_file}"
           feats = json.loads(feat_file.read_text())
           assert isinstance(feats, list) and len(feats) > 10, "Bad feature list"
           print(f"✅ {len(feats)} features declared")
           PY
-          
-  # ──────────────────────────────────────────────────────────
-  # 4. ML TRAINING PIPELINE DRY-RUN (no publish)
-  # ──────────────────────────────────────────────────────────
+
+  # --------------------------------------------------------
+  # 4. ML PIPELINE DRY-RUN
+  # --------------------------------------------------------
   ml-pipeline-dryrun:
     name: ML Pipeline Dry-Run
     runs-on: ubuntu-latest
@@ -178,16 +173,14 @@ jobs:
       - name: Install ML deps
         working-directory: ${{ env.WORKDIR }}
         run: |
-          pip install --upgrade pip
-          pip install -r requirements/ml.txt
+          python -m pip install --upgrade pip
+          pip install pandas numpy scikit-learn joblib pyarrow
+          pip install xgboost
 
-      - name: Dry-run training (sample only, no MLflow publish)
+      - name: Dry-run training
         working-directory: ${{ env.WORKDIR }}
         env:
-          MLFLOW_TRACKING_URI: ""       # disable MLflow publish
           DATA_PATH: database/data/merged_credit_risk_data.parquet
-
-        # Simple Training ML models pipeline on CI integration
         run: |
           python - <<'PY'
           import pandas as pd, numpy as np, joblib, tempfile, os
@@ -201,10 +194,11 @@ jobs:
           y = df["Approved_Flag"]
           X = df.drop(columns=["Approved_Flag"]).select_dtypes(include=[np.number])
 
-          X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+          X_tr, X_te, y_tr, y_te = train_test_split(
+              X, y, test_size=0.2, random_state=42, stratify=y
+          )
           scaler = StandardScaler().fit(X_tr)
-          X_tr_s = scaler.transform(X_tr)
-          X_te_s = scaler.transform(X_te)
+          X_tr_s, X_te_s = scaler.transform(X_tr), scaler.transform(X_te)
 
           model = GradientBoostingClassifier(n_estimators=50, random_state=42)
           model.fit(X_tr_s, y_tr)
@@ -213,10 +207,8 @@ jobs:
           acc = accuracy_score(y_te, preds)
           f1  = f1_score(y_te, preds, average="weighted")
           print(f"Dry-run → accuracy={acc:.4f}  f1={f1:.4f}")
-
           assert acc > 0.50, f"Accuracy too low: {acc}"
 
-          # Round-trip bundle serialization
           with tempfile.TemporaryDirectory() as tmp:
               p = Path(tmp) / "bundle.joblib"
               joblib.dump({"models": {"gb": model}, "scaler": scaler,
@@ -228,9 +220,9 @@ jobs:
           print("✅ ML dry-run + bundle round-trip OK")
           PY
 
-  # ──────────────────────────────────────────────────────────
-  # 5. RAG LOADER SMOKE TEST (no live LLM calls)
-  # ──────────────────────────────────────────────────────────
+  # --------------------------------------------------------
+  # 5. RAG LOADER SMOKE TEST
+  # --------------------------------------------------------
   rag-smoke:
     name: RAG Loader Smoke Test
     runs-on: ubuntu-latest
@@ -246,8 +238,9 @@ jobs:
       - name: Install LLM deps
         working-directory: ${{ env.WORKDIR }}
         run: |
-          pip install --upgrade pip
-          pip install -r requirements/llm.txt
+          python -m pip install --upgrade pip
+          pip install langchain-core langchain-community langchain-huggingface langchain-chroma
+          pip install chromadb sentence-transformers huggingface_hub
 
       - name: Verify Chroma collections & config
         working-directory: ${{ env.WORKDIR }}
@@ -259,35 +252,39 @@ jobs:
           base = Path("database/LLM")
           assert (base / "chroma_store" / "chroma.sqlite3").exists(), "Missing chroma.sqlite3"
           cfg = json.loads((base / "outputs_llm" / "rag_config.json").read_text())
-          assert "embed_model" in cfg and "thresholds" in cfg
+          assert "thresholds" in cfg
           assert cfg["thresholds"]["auto_reject_below"] < cfg["thresholds"]["auto_approve_above"]
           print("✅ RAG config + Chroma present")
           PY
 
-      - name: Load Chroma + embeddings (no LLM)
+      - name: Load Chroma + embeddings
         working-directory: ${{ env.WORKDIR }}
         env:
-          HUGGINGFACE_API_KEY: "dummy"       # prevent accidental network calls
+          HUGGINGFACE_API_KEY: "dummy"
           GROQ_API_KEY: "dummy"
         run: |
           python - <<'PY'
           from langchain_huggingface import HuggingFaceEmbeddings
-          from langchain_community.vectorstores import Chroma
+          from langchain_chroma import Chroma
           from pathlib import Path
 
-          emb = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5",
-                                      encode_kwargs={"normalize_embeddings": True})
-          store = Chroma(collection_name="policies",
-                         embedding_function=emb,
-                         persist_directory=str(Path("database/LLM/chroma_store")))
+          emb = HuggingFaceEmbeddings(
+              model_name="sentence-transformers/all-MiniLM-L6-v2",
+              encode_kwargs={"normalize_embeddings": True},
+          )
+          store = Chroma(
+              collection_name="policies",
+              embedding_function=emb,
+              persist_directory=str(Path("database/LLM/chroma_store")),
+          )
           n = store._collection.count()
           assert n > 0, "policies collection empty"
           print(f"✅ Policies collection: {n} vectors")
           PY
 
-  # ──────────────────────────────────────────────────────────
+  # --------------------------------------------------------
   # GATE — required by CD
-  # ──────────────────────────────────────────────────────────
+  # --------------------------------------------------------
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest

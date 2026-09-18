@@ -23,9 +23,9 @@ env:
   MODEL_NAME: credit_risk_bundle
 
 jobs:
-  # ──────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────
   # 1. WAIT FOR CI GATE
-  # ──────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────
   wait-for-ci:
     name: Wait for CI Gate
     runs-on: ubuntu-latest
@@ -48,9 +48,9 @@ jobs:
               core.info(`✅ CI passed for ${sha}`);
             }
 
-  # ──────────────────────────────────────────────────────────
-  # 2. BUILD & SCAN IMAGES
-  # ──────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────
+  # 2. BUILD & PUSH IMAGES
+  # ──────────────────────────────────────────────────
   build-and-push:
     name: Build & Push Images
     runs-on: ubuntu-latest
@@ -102,9 +102,9 @@ jobs:
         with:
           sarif_file: trivy-${{ matrix.name }}.sarif
 
-  # ──────────────────────────────────────────────────────────
-  # 3. CONFIG / MANIFEST VALIDATION
-  # ──────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────
+  # 3. K8S MANIFEST VALIDATION
+  # ──────────────────────────────────────────────────
   validate-k8s:
     name: Validate K8s Manifests
     runs-on: ubuntu-latest
@@ -122,9 +122,9 @@ jobs:
           kubeconform -strict -ignore-missing-schemas -summary \
             credit_risk_production/k8s/
 
-  # ──────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────
   # 4. DEPLOY PLATFORM (infra only)
-  # ──────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────
   deploy-platform:
     name: Deploy Platform to K8s
     runs-on: ubuntu-latest
@@ -132,7 +132,7 @@ jobs:
     environment:
       name: production
       url: https://api.credit-risk.internal
-    steps
+    steps:
       - uses: actions/checkout@v4
 
       - name: Setup kubeconfig
@@ -155,7 +155,6 @@ jobs:
           kubectl -n credit-risk set image deploy/mlflow mlflow=$IMAGE_MLFLOW
           kubectl -n credit-risk rollout status deploy/mlflow --timeout=180s
 
-          # API is deployed WITHOUT models — models_serving.yaml handles that
           kubectl apply -f credit_risk_production/k8s/api-deployment.yaml
           kubectl apply -f credit_risk_production/k8s/api-service.yaml
           kubectl -n credit-risk set image deploy/credit-risk-api api=$IMAGE_API
@@ -169,7 +168,7 @@ jobs:
           curl -sf http://localhost:8080/ready  || (echo "Ready failed"; exit 1)
           echo "✅ Platform deployed & healthy"
 
-      - name: Notify failure
+      - name: Rollback on failure
         if: failure()
         run: |
           echo "::error::Platform deployment failed. Rolling back..."
