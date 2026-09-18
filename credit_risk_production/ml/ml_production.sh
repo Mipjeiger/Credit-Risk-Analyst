@@ -15,6 +15,7 @@
 #   clean      Remove local model artifacts
 #   help       Show this help
 
+# =============================================================================
 # --- Step by Step to run the ML pipeline ---
 
 # make it executable (once)

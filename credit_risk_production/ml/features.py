@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 
 """Shared feature engineering for ML training + serving"""
 

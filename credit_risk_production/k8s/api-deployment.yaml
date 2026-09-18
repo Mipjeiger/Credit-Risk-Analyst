@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit-risk-api
+  namespace: credit-risk
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: credit-risk-api }
+  template:
+    metadata:
+      labels: { app: credit-risk-api }
+    spec:
+      containers:
+        - name: api
+          image: credit_risk_production-api/credit-risk-api:latest
+          envFrom:
+            - secretRef: { name: api-secrets }
+          ports: [{ containerPort: 8000 }]
+          readinessProbe:
+            httpGet: { path: /ready, port: 8000 }
+            initialDelaySeconds: 20
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 30
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits:   { cpu: 2,    memory: 4Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: credit-risk-api
+  namespace: credit-risk
+spec:
+  selector: { app: credit-risk-api }
+  ports: [{ port: 8000, targetPort: 8000 }]

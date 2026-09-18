@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 
@@ -21,10 +20,10 @@ from sklearn.metrics import (
 )
 
 # Configuration
-BASE_PATH = Path(__file__).resolve().parents[2]
+BASE_PATH = Path("/app") # Path by docker container -> back to base as /app
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 EXPERIMENT = os.getenv("MLFLOW_EXPERIMENT_NAME", "credit_risk_ml")
-DATA_PATH = BASE_PATH / "credit_risk_production" / "database" / "data" / "merged_credit_risk_data.parquet"
+DATA_PATH = BASE_PATH / "database" / "data" / "merged_credit_risk_data.parquet"
 ARTIFACT_PATH = BASE_PATH / "credit_risk_production" / "database" / "LLM" / "outputs_llm" / "model_artifacts_mlflow"
 TARGET = "Approved_Flag"
 
@@ -50,23 +49,23 @@ def build_param_distributions():
             'C': [0.1, 1, 10, 100],
             'penalty': ['l2'],
             'solver': ['lbfgs', 'saga'],
-            'max_iter': [1000, 2000]
+            'max_iter': [100, 200]
         },
         'Random Forest': {
-            'n_estimators': [100, 200, 300],
+            'n_estimators': [100, 200],
             'max_depth': [None, 10, 20, 30],
             'min_samples_split': [2, 5, 10],
             'min_samples_leaf': [1, 2, 4]
         },
         'Gradient Boosting': {
-            'n_estimators': [100, 200, 300],    
+            'n_estimators': [100, 200],    
             'learning_rate': [0.01, 0.1, 0.2],
             'max_depth': [3, 5, 7],
             'min_samples_split': [2, 5, 10],
             'min_samples_leaf': [1, 2, 4]
         },
         'XGBoost': {
-            'n_estimators': [100, 200, 300],
+            'n_estimators': [100, 200],
             'learning_rate': [0.01, 0.1, 0.2],
             'max_depth': [3, 5, 7],
             'subsample': [0.8, 0.9, 1.0],
@@ -75,7 +74,7 @@ def build_param_distributions():
         'K-Nearest Neighbors': {
             'n_neighbors': [3, 5, 7, 9],
             'weights': ['uniform', 'distance'],
-            'metric': ['euclidean', 'manhattan'],
+            'metric': ['minkowski'],
         },
         'Decision Tree': {
             'max_depth': [None, 10, 20, 30],
@@ -92,21 +91,28 @@ def run():
     X = df.drop(columns=[TARGET])
     y = df[TARGET]
 
+    # Encode target (y) first -> it's uniqe categorical by seen (p1, p2, p3, p4)
+    target_le = LabelEncoder()
+    y_encoded = target_le.fit_transform(y)
+
     # 1. Train-Test Split First (Prevents Data Leakage)
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
     )
 
     # 2. Fit LabelEncoders ONLY on X_train
     le_map = {}
     X_train = X_train.copy()
     X_test = X_test .copy()
-    
+
+    # Encode categorical features using LabelEncoder
     cat_cols = X_train.select_dtypes(include=["object", "category"]).columns
     for col in cat_cols:
         le = LabelEncoder()
         X_train[col] = le.fit_transform(X_train[col].astype(str))
         test_vals = X_test[col].astype(str)
+
+        # Encode test values by handling unseen categories: if unseen, assign a default value (e.g., 0)
         X_test[col] = test_vals.map(lambda s: le.transform([s])[0] if s in le.classes_ else 0)
         le_map[col] = le
 
@@ -131,8 +137,13 @@ def run():
             search = RandomizedSearchCV(
                 estimator=model,
                 param_distributions=param_distributions[name],
-                n_iter=10, scoring="f1_weighted", cv=5,
-                random_state=42, n_jobs=-1, verbose=1, refit=True,
+                n_iter=10, 
+                scoring="f1_weighted", 
+                cv=5,
+                random_state=42, 
+                n_jobs=-1, 
+                verbose=2, 
+                refit=True,
             )
             search.fit(X_train_scaled, y_train)
             tuned = search.best_estimator_
@@ -157,9 +168,10 @@ def run():
             mlflow.log_params(search.best_params_)
             mlflow.log_metrics({k: float(v) for k, v in metrics.items() if not np.isnan(v)})
 
+            # Mlflow logging for model registration -> Check on UI Mlflow
             mlflow.sklearn.log_model(
                 sk_model=tuned,
-                artifact_path=f"models/{name}",
+                artifact_path="model",
                 signature=signature,
                 input_example=input_example,
                 registered_model_name=registry_name(name),
