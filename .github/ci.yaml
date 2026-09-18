@@ -13,6 +13,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.11"
   WORKDIR: credit_risk_production
+  MODEL_NAME: credit_risk_bundle
 
 jobs:
   # --------------------------------------------------------

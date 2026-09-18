@@ -19,6 +19,8 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/credit-risk
+  NAMESPACE: credit-risk
+  MODEL_NAME: credit_risk_bundle
 
 jobs:
   # ──────────────────────────────────────────────────────────
