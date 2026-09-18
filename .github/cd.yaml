@@ -1,0 +1,174 @@
+name: CD — Build, Validate & Deploy Platform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "credit_risk_production/app/**"
+      - "credit_risk_production/ml/**"
+      - "credit_risk_production/llmops/**"
+      - "credit_risk_production/docker/**"
+      - "credit_risk_production/k8s/**"
+      - ".github/workflows/cd.yaml"
+  workflow_dispatch:
+
+concurrency:
+  group: cd-main
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/credit-risk
+
+jobs:
+  # ──────────────────────────────────────────────────────────
+  # 1. WAIT FOR CI GATE
+  # ──────────────────────────────────────────────────────────
+  wait-for-ci:
+    name: Wait for CI Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.sha;
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yaml',
+              head_sha: sha,
+            });
+            const latest = runs.data.workflow_runs[0];
+            if (!latest || latest.conclusion !== 'success') {
+              core.setFailed(`CI not green for ${sha}`);
+            } else {
+              core.info(`✅ CI passed for ${sha}`);
+            }
+
+  # ──────────────────────────────────────────────────────────
+  # 2. BUILD & SCAN IMAGES
+  # ──────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    needs: wait-for-ci
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    strategy:
+      matrix:
+        include:
+          - name: api
+            dockerfile: credit_risk_production/docker/Dockerfile.api
+          - name: mlflow
+            dockerfile: credit_risk_production/docker/Dockerfile.mlflow
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: credit_risk_production
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ github.sha }}
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+
+  # ──────────────────────────────────────────────────────────
+  # 3. CONFIG / MANIFEST VALIDATION
+  # ──────────────────────────────────────────────────────────
+  validate-k8s:
+    name: Validate K8s Manifests
+    runs-on: ubuntu-latest
+    needs: wait-for-ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar xz && sudo mv kubeconform /usr/local/bin/
+
+      - name: Validate
+        run: |
+          kubeconform -strict -ignore-missing-schemas -summary \
+            credit_risk_production/k8s/
+
+  # ──────────────────────────────────────────────────────────
+  # 4. DEPLOY PLATFORM (infra only)
+  # ──────────────────────────────────────────────────────────
+  deploy-platform:
+    name: Deploy Platform to K8s
+    runs-on: ubuntu-latest
+    needs: [build-and-push, validate-k8s]
+    environment:
+      name: production
+      url: https://api.credit-risk.internal
+    steps
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Apply manifests (platform only)
+        env:
+          IMAGE_API: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api:${{ github.sha }}
+          IMAGE_MLFLOW: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-mlflow:${{ github.sha }}
+        run: |
+          kubectl apply -f credit_risk_production/k8s/namespace.yaml
+          kubectl apply -f credit_risk_production/k8s/postgres.yaml
+          kubectl apply -f credit_risk_production/k8s/mlflow.yaml
+          kubectl apply -f credit_risk_production/k8s/prometheus.yaml
+          kubectl apply -f credit_risk_production/k8s/grafana.yaml
+
+          kubectl -n credit-risk set image deploy/mlflow mlflow=$IMAGE_MLFLOW
+          kubectl -n credit-risk rollout status deploy/mlflow --timeout=180s
+
+          # API is deployed WITHOUT models — models_serving.yaml handles that
+          kubectl apply -f credit_risk_production/k8s/api-deployment.yaml
+          kubectl apply -f credit_risk_production/k8s/api-service.yaml
+          kubectl -n credit-risk set image deploy/credit-risk-api api=$IMAGE_API
+          kubectl -n credit-risk rollout status deploy/credit-risk-api --timeout=180s
+
+      - name: Post-deploy smoke test
+        run: |
+          kubectl -n credit-risk port-forward svc/credit-risk-api 8080:80 &
+          sleep 8
+          curl -sf http://localhost:8080/health || (echo "Health failed"; exit 1)
+          curl -sf http://localhost:8080/ready  || (echo "Ready failed"; exit 1)
+          echo "✅ Platform deployed & healthy"
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "::error::Platform deployment failed. Rolling back..."
+          kubectl -n credit-risk rollout undo deploy/credit-risk-api
