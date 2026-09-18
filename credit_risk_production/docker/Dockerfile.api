@@ -2,21 +2,30 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# 2. Install build dependencies and clean up in one step
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl && rm -rf /var/lib/apt/lists/*
+    build-essential \
+    curl \
+    && COPY_REQ=1 pip install --upgrade pip \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/api.txt ./requirements/api.txt
-RUN pip install --no-cache-dir -r requirements/api.txt
+# 3. Leverage Docker layer caching for requirements
+COPY docker/requirements_api.txt .
 
-# Copy the application code
+RUN pip install --no-cache-dir -r requirements_api.txt \
+    && apt-get purge -y --auto-remove build-essential \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache
+
+# 4. Copy source code
 COPY app/ ./app/
 COPY ml/ ./ml/
 COPY llmops/ ./llmops/
 COPY database/LLM/ ./database/LLM/
 
-ENV PYTHONPATH=/app
 EXPOSE 8000
-
-HEALTHCHECK CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
