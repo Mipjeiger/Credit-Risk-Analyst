@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+
 from app.api.schemas import CustomerFeatures, DecideResponse
 from llmops.rag_loader import CreditRiskRAG
 
@@ -7,7 +8,7 @@ router = APIRouter(tags=["llm"])
 @router.post("/llm", response_model=DecideResponse)
 def llm_query(
     payload: CustomerFeatures,
-    rag: CreditRiskRAG = Depends(CreditRiskRAG),
+    rag: Annotated[CreditRiskRAG, Depends(CreditRiskRAG)],
 ) -> DecideResponse:
     """Endpoint for LLM-based retrieval queries and responses."""
     try:

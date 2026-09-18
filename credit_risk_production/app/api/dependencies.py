@@ -1,6 +1,8 @@
 from functools import lru_cache
-from llmops.rag_loader import CreditRiskRAG
+
 from app.api.config import settings
+from llmops.rag_loader import CreditRiskRAG
+
 
 @lru_cache(maxsize=1)
 def get_rag() -> CreditRiskRAG:

@@ -74,6 +74,6 @@ def row_to_narrative(row: pd.Series, cid=None) -> str:
             parts.append(f"[{group.upper()}]\n" + "\n".join(lines))
     df = [f" {c}={row[c]:.4f}" for c in DERIVED_FEATURES if c in row.index and pd.notna(row[c])]
     if df:
-        parts.append(f"[DERIVED]\n" + "\n".join(df))
+        parts.append("[DERIVED]\n" + "\n".join(df))
 
     return "\n".join(parts)

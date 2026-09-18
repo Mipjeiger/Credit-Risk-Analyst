@@ -1,5 +1,5 @@
 import os
-from pathlib import Path
+
 
 class Settings:
     MLFLOW_TRACKING_URI: str = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")

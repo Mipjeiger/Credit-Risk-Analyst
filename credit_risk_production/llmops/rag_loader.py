@@ -1,19 +1,17 @@
-import os
 import json
+import logging
+import os
 import re
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
-import pandas as pd
 import joblib
-import logging
-from dotenv import load_dotenv
-
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+import pandas as pd
 from chromadb.config import Settings
-from huggingface_hub import InferenceClient
-from groq import Groq
+from dotenv import load_dotenv
+from huggingface_hub import HTTPError, InferenceClient
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
 
 # Configuration
 BASE_PATH = Path(__file__).resolve().parents[1]
@@ -70,10 +68,10 @@ class CreditRiskRAG:
         hf_key = os.getenv("HUGGINGFACE_API_KEY")
         groq_key = os.getenv("GROQ_API_KEY")
         self.hf_client = InferenceClient(token=hf_key) if hf_key else None
-        self.groq_client = Groq(api_key=groq_key) if groq_key else None
+        self.groq_client = InferenceClient(token=groq_key) if groq_key else None
 
     # ------ ML Scoring ------
-    def score(self, row: pd.Series, model_name: str) -> Dict[str, Any]:
+    def score(self, row: pd.Series, model_name: str) -> dict[str, Any]:
         """Score a single row using the specified string model chosen from the model bundle."""
         X = pd.DataFrame([row.reindex(self.model_features).values], columns=self.model_features)
 
@@ -121,30 +119,31 @@ class CreditRiskRAG:
                     "text": r.choices[0].message.content,
                     "provider": "huggingface"
                 }
-            except Exception as e:
-                logger.error(f"❌ Huggingface Failed: {e}")
-                logger.info("Attempting fallback to Groq")
-
-        # Fallback to Groq
+            except HTTPError as e:
+                if e.response.status_code == 400:
+                    logger.error("❌ Huggingface Bad Request: switching to Groq fallback")
+                else:
+                    logger.error(f"❌ Huggingface Failed: {e}")
+                # Continue to fallback
+        # Fallback to Groq if available
         if self.groq_client:
             try:
                 r = self.groq_client.chat.completions.create(
                     model=self.cfg["groq_model"],
                     messages=messages,
                     max_tokens=max_tokens,
-                    temperature=temperature
+                    temperature=temperature,
                 )
                 return {
                     "text": r.choices[0].message.content,
-                    "provider": "groq"
+                    "provider": "groq",
                 }
             except Exception as e:
                 logger.error(f"❌ Groq Failed: {e}")
-
-        raise RuntimeError("❌ No LLM provider available. Please check your API keys and configuration.")
+                # Continue to fallback
 
     # ----- Decide ------
-    def decide(self, row: pd.Series) -> Dict[str, Any]:
+    def decide(self, row: pd.Series) -> dict[str, Any]:
         """
            Main function deciding on a credit risk scoring and LLM retrieval to decide
            Using LLM or action by ML models

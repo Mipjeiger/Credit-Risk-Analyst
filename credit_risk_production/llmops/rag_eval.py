@@ -1,7 +1,7 @@
 import os
-import json
-from pathlib import Path
+
 import mlflow
+
 from llmops.rag_loader import CreditRiskRAG
 
 """Evaluate RAG Retrieval quality + log to MLFlow"""

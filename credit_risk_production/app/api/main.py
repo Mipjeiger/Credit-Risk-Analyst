@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.responses import Response
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-from app.api.routes import health, predict, decide, llm
-from app.api.config import settings
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+from app.api.routes import decide, health, llm, predict
 
 # Build FastAPI app
 app = FastAPI(

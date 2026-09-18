@@ -1,13 +1,15 @@
-from typing import Dict, List, Any
+from typing import Any
+
 from pydantic import BaseModel, Field
 
+
 class CustomerFeatures(BaseModel):
-    features: Dict[str, Any] = Field(..., description="Customer feature row as dict")
+    features: dict[str, Any] = Field(..., description="Customer feature row as dict")
 
 class PredictResponse(BaseModel):
     model_used: str
     predicted_flag: int
-    class_probabilities: Dict[str, float]
+    class_probabilities: dict[str, float]
     primary_risk_probability: float
 
 class DecideResponse(BaseModel):
@@ -17,9 +19,9 @@ class DecideResponse(BaseModel):
     risk_score: float
     risk_score_100: float
     recommended_action: str
-    key_driver: List[str] = []
-    policy_refs: List[str] = []
-    fraud_indicators: List[str] = []
+    key_driver: list[str] = []
+    policy_refs: list[str] = []
+    fraud_indicators: list[str] = []
     confidence: float = 0.0
 
 class HealthResponse(BaseModel):

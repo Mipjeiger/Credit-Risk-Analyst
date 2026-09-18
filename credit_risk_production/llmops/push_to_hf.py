@@ -1,7 +1,8 @@
 import os
-from huggingface_hub import HfApi, create_repo, upload_folder
 from pathlib import Path
+
 from dotenv import load_dotenv
+from huggingface_hub import HfApi, create_repo, upload_folder
 
 """Push the model "Qwen/Qwen2.5-Coder-32B-Instruct" to HuggingFace Hub."""
 

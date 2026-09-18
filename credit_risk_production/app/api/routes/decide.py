@@ -1,15 +1,29 @@
 import time
+
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
-from app.api.schemas import CustomerFeatures, DecideResponse
+
 from app.api.dependencies import get_rag
-from app.api.metrics import REQUEST_COUNT, REQUEST_LATENCY, ML_PREDICTIONS, LLM_FALLBACKS, RISK_SCORE_HIST
+from app.api.metrics import (
+    LLM_FALLBACKS,
+    ML_PREDICTIONS,
+    REQUEST_COUNT,
+    REQUEST_LATENCY,
+    RISK_SCORE_HIST,
+)
+from app.api.schemas import CustomerFeatures, DecideResponse
+from credit_risk_production.llmops.rag_loader import CreditRiskRAG
 
 router = APIRouter(tags=["decide"])
 
 # Endpoint
+
+
 @router.post("/decide", response_model=DecideResponse)
-def decide(payload: CustomerFeatures, rag=Depends(get_rag)):
+
+
+def decide(payload: CustomerFeatures, rag=Depends(get_rag)):# noqa: B008
+
     start = time.time()
 
     try:
@@ -43,7 +57,7 @@ def decide(payload: CustomerFeatures, rag=Depends(get_rag)):
             confidence=float(result.get("confidence", 0.0) or 0.0)
         )
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         REQUEST_COUNT.labels(endpoint="/decide", method="POST", status="500").inc()
         raise HTTPException(status_code=500, detail=str(e))
 

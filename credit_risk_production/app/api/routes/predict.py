@@ -1,10 +1,18 @@
 import time
+from typing import Literal
+
 import pandas as pd
-from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from app.api.schemas import CustomerFeatures, PredictResponse
+
 from app.api.dependencies import get_rag
-from app.api.metrics import REQUEST_COUNT, REQUEST_LATENCY, ML_PREDICTIONS, RISK_SCORE_HIST, MODEL_LOADED
+from app.api.metrics import (
+    ML_PREDICTIONS,
+    MODEL_LOADED,
+    REQUEST_COUNT,
+    REQUEST_LATENCY,
+    RISK_SCORE_HIST,
+)
+from app.api.schemas import CustomerFeatures, PredictResponse
 
 # Define allowed model choices matching on model files keys
 ModelType = Literal[
@@ -21,7 +29,7 @@ router = APIRouter(tags=["predict"])
 @router.post("/predict", response_model=PredictResponse)
 def predict(
     payload: CustomerFeatures, 
-    model_name: Optional[ModelType] = Query(
+    model_name: ModelType | None = Query(
         default=None,
         description="Optional model name to use for prediction. If not provided, the default model will be used."
     ),
