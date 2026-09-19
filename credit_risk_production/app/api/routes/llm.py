@@ -1,3 +1,4 @@
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.schemas import CustomerFeatures, DecideResponse

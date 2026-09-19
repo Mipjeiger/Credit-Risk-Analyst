@@ -33,7 +33,8 @@ def predict(
         default=None,
         description="Optional model name to use for prediction. If not provided, the default model will be used."
     ),
-    rag=Depends(get_rag)
+    # noqa: B008
+    rag = Depends(get_rag)
 ):
     start = time.time()
 

@@ -27,7 +27,7 @@ def run():
     y = df[TARGET]
 
     # Train-Test Split First (Prevents Data Leakage)
-    X_train, X_test, y_train, y_test = train_test_split(
+    X_train, X_test, _y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
@@ -35,13 +35,16 @@ def run():
     X_test = X_test .copy()
 
     # Fit LabelEncoders
+    # noqa: B023
     for col, le in bundle['label_encoders'].items():
         if col in X.columns:
             X_train[col] = le.fit_transform(X_train[col].astype(str))
-            X_test[col] = X_test[col].astype(str).map(lambda x: le.transform([x])[0] if x in le.classes_ else 0)
+    # noqa: B023
+        X_test[col] = X_test[col].astype(str).map(lambda x: le.transform([x])[0] if x in le.classes_ else 0)
 
     # Scale the features with StandardScaler
     scaler = bundle['scaler']
+    # noqa: F841
     X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns)
     X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns)
 

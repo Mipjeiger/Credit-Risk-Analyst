@@ -12,7 +12,6 @@ from app.api.metrics import (
     RISK_SCORE_HIST,
 )
 from app.api.schemas import CustomerFeatures, DecideResponse
-from credit_risk_production.llmops.rag_loader import CreditRiskRAG
 
 router = APIRouter(tags=["decide"])
 
@@ -22,7 +21,8 @@ router = APIRouter(tags=["decide"])
 @router.post("/decide", response_model=DecideResponse)
 
 
-def decide(payload: CustomerFeatures, rag=Depends(get_rag)):# noqa: B008
+def decide(payload: CustomerFeatures, # noqa: B008
+ rag = Depends(get_rag)):# noqa: B008
 
     start = time.time()
 
@@ -57,7 +57,8 @@ def decide(payload: CustomerFeatures, rag=Depends(get_rag)):# noqa: B008
             confidence=float(result.get("confidence", 0.0) or 0.0)
         )
 
-    except Exception as e:  # noqa: BLE001
+    # noqa: BLE001
+    except Exception as e:
         REQUEST_COUNT.labels(endpoint="/decide", method="POST", status="500").inc()
         raise HTTPException(status_code=500, detail=str(e))
 

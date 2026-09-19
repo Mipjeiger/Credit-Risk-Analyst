@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends
 from app.api.dependencies import get_rag
 from app.api.metrics import MODEL_LOADED
 from app.api.schemas import HealthResponse
-from credit_risk_production.llmops.rag_loader import CreditRiskRAG
 
 router = APIRouter(tags=["Health"])
 
