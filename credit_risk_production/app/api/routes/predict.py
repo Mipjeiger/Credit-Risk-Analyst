@@ -21,14 +21,15 @@ ModelType = Literal[
     "Gradient Boosting",
     "XGBoost",
     "K-Nearest Neighbors",
-    "Decision Tree"
+    "Decision Tree",
 ]
 
 router = APIRouter(tags=["predict"])
 
+
 @router.post("/predict", response_model=PredictResponse)
 def predict(
-    payload: CustomerFeatures, 
+    payload: CustomerFeatures,
     rag: Annotated[object, Depends(get_rag)],
     model_name: ModelType | None = None,
 ):

@@ -7,6 +7,7 @@ from llmops.rag_loader import CreditRiskRAG
 
 router = APIRouter(tags=["llm"])
 
+
 @router.post("/llm", response_model=DecideResponse)
 def llm_query(
     payload: CustomerFeatures,
