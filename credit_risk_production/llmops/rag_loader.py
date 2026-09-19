@@ -79,8 +79,8 @@ class CreditRiskRAG:
             if col in X.columns:
                 try:
                     X[col] = le.transform(X[col].astype(str))
-                except Exception:
-                    logger.warning("LabelEncoder fallback for column %s", col)
+                except (KeyError, ValueError) as e:
+                    logger.warning("LabelEncoder fallback for column %s: %s", col, e)
                     X[col] = 0
                 X[col] = X[col]
 
@@ -120,7 +120,7 @@ class CreditRiskRAG:
                     "text": r.choices[0].message.content,
                     "provider": "huggingface"
                 }
-            except Exception as e:
+            except (KeyError, ValueError) as e:
                 logger.error(f"❌ Huggingface Failed: {e}")
                 # Continue to fallback
         # Fallback to Groq if available
@@ -136,7 +136,7 @@ class CreditRiskRAG:
                     "text": r.choices[0].message.content,
                     "provider": "groq",
                 }
-            except Exception as e:
+            except (KeyError, ValueError) as e:
                 logger.error(f"❌ Groq Failed: {e}")
                 # Continue to fallback
         # No provider available
@@ -192,8 +192,8 @@ class CreditRiskRAG:
         txt = re.sub(r"^```(json)?|```$", "", out["text"].strip(), flags=re.MULTILINE).strip()
         try:
             parsed = json.loads(txt)
-        except Exception:
-            m = re.search(r"\{.*\}", txt, flags=r.DOTALL)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", txt, flags=re.DOTALL)
             parsed = json.loads(m.group(0)) if m else {"raw_text": txt}
 
         return {

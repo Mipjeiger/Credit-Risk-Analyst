@@ -38,7 +38,7 @@ def run():
     for col, le in bundle['label_encoders'].items():
         if col in X.columns:
             X_train[col] = le.fit_transform(X_train[col].astype(str))
-        X_test[col] = X_test[col].astype(str).map(lambda x: le.transform([x])[0] if x in le.classes_ else 0)
+            X_test[col] = le.transform(X_test[col].astype(str))
 
     # Scale the features with StandardScaler
     scaler = bundle['scaler']

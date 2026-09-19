@@ -113,10 +113,7 @@ def run():
     for col in cat_cols:
         le = LabelEncoder()
         X_train[col] = le.fit_transform(X_train[col].astype(str))
-        test_vals = X_test[col].astype(str)
-
-        # Encode test values by handling unseen categories: if unseen, assign a default value (e.g., 0)
-        X_test[col] = test_vals.map(lambda s: le.transform([s])[0] if s in le.classes_ else 0)
+        X_test[col] = le.transform(X_test[col].astype(str))  # This will raise an error if unseen categories exist
         le_map[col] = le
 
     # 3. Fit StandardScaler ONLY on X_train
@@ -164,7 +161,7 @@ def run():
                 metrics["roc_auc"] = roc_auc_score(
                     y_test, proba, multi_class="ovr", average="weighted"
                 )
-            except Exception:
+            except (KeyError, ValueError):
                 metrics["roc_auc"] = float("nan")
 
             # Log parameters, metrics, and the tuned model to MLflow

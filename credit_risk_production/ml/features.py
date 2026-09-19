@@ -45,7 +45,7 @@ DERIVED_FEATURES = [
 def _sd(a, b):
     try:
         return float(a) / float(b) if pd.notna(a) and pd.notna(b) and b not in (0, None) else 0.0
-    except Exception:
+    except (KeyError, ValueError):
         return 0.0
 
 def add_derived_features(row: pd.Series) -> pd.Series:

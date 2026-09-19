@@ -1,5 +1,5 @@
 import time
-from typing import Literal
+from typing import Annotated, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,8 +29,8 @@ router = APIRouter(tags=["predict"])
 @router.post("/predict", response_model=PredictResponse)
 def predict(
     payload: CustomerFeatures, 
+    rag: Annotated[object, Depends(get_rag)],
     model_name: ModelType | None = None,
-    rag = Depends(get_rag)
 ):
     start = time.time()
 
@@ -54,7 +54,7 @@ def predict(
         REQUEST_COUNT.labels(endpoint="/predict", method="POST", status="200").inc()
         return PredictResponse(**ml)
 
-    except Exception as e:
+    except (KeyError, ValueError) as e:
         REQUEST_COUNT.labels(endpoint="/predict", method="POST", status="500").inc()
         raise HTTPException(status_code=500, detail=str(e))
 
