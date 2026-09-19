@@ -164,7 +164,6 @@ def run():
                 metrics["roc_auc"] = roc_auc_score(
                     y_test, proba, multi_class="ovr", average="weighted"
                 )
-            # noqa: BLE001
             except Exception:
                 metrics["roc_auc"] = float("nan")
 

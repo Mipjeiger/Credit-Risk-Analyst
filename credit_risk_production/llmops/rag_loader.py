@@ -9,7 +9,7 @@ import joblib
 import pandas as pd
 from chromadb.config import Settings
 from dotenv import load_dotenv
-from huggingface_hub import HTTPError, InferenceClient
+from huggingface_hub import InferenceClient
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -82,6 +82,7 @@ class CreditRiskRAG:
                 except Exception:
                     logger.warning("LabelEncoder fallback for column %s", col)
                     X[col] = 0
+                X[col] = X[col]
 
         # Scale with the FITTED scaler
         X_scaled = pd.DataFrame(self.scaler.transform(X),columns=X.columns)
@@ -119,11 +120,8 @@ class CreditRiskRAG:
                     "text": r.choices[0].message.content,
                     "provider": "huggingface"
                 }
-            except HTTPError as e:
-                if e.response.status_code == 400:
-                    logger.error("❌ Huggingface Bad Request: switching to Groq fallback")
-                else:
-                    logger.error(f"❌ Huggingface Failed: {e}")
+            except Exception as e:
+                logger.error(f"❌ Huggingface Failed: {e}")
                 # Continue to fallback
         # Fallback to Groq if available
         if self.groq_client:
@@ -141,6 +139,8 @@ class CreditRiskRAG:
             except Exception as e:
                 logger.error(f"❌ Groq Failed: {e}")
                 # Continue to fallback
+        # No provider available
+        raise RuntimeError("❌ No LLM provider available. Please check your API keys and configuration.")
 
     # ----- Decide ------
     def decide(self, row: pd.Series) -> dict[str, Any]:
@@ -193,7 +193,7 @@ class CreditRiskRAG:
         try:
             parsed = json.loads(txt)
         except Exception:
-            m = re.search(r"\{.*\}", txt, flags=re.DOTALL)
+            m = re.search(r"\{.*\}", txt, flags=r.DOTALL)
             parsed = json.loads(m.group(0)) if m else {"raw_text": txt}
 
         return {

@@ -21,7 +21,7 @@ router = APIRouter(tags=["decide"])
 @router.post("/decide", response_model=DecideResponse)
 
 
-def decide(payload: CustomerFeatures, # noqa: B008
+def decide(payload: CustomerFeatures,
  rag = Depends(get_rag)):# noqa: B008
 
     start = time.time()
@@ -57,8 +57,7 @@ def decide(payload: CustomerFeatures, # noqa: B008
             confidence=float(result.get("confidence", 0.0) or 0.0)
         )
 
-    # noqa: BLE001
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  # noqa: BLE001
         REQUEST_COUNT.labels(endpoint="/decide", method="POST", status="500").inc()
         raise HTTPException(status_code=500, detail=str(e))
 

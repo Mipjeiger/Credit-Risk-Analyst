@@ -35,17 +35,13 @@ def run():
     X_test = X_test .copy()
 
     # Fit LabelEncoders
-    # noqa: B023
     for col, le in bundle['label_encoders'].items():
         if col in X.columns:
             X_train[col] = le.fit_transform(X_train[col].astype(str))
-    # noqa: B023
         X_test[col] = X_test[col].astype(str).map(lambda x: le.transform([x])[0] if x in le.classes_ else 0)
 
     # Scale the features with StandardScaler
     scaler = bundle['scaler']
-    # noqa: F841
-    X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns)
     X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns)
 
     # MLFlow Logging

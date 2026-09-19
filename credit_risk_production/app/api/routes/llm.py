@@ -1,4 +1,5 @@
 from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.schemas import CustomerFeatures, DecideResponse
@@ -21,7 +22,7 @@ def llm_query(
             status_code=400,
             detail=f"Missing or invalid applicant feature: {exc}",
         ) from exc
-    except Exception:
+    except Exception:  # noqa: BLE001  # noqa: BLE001
         raise HTTPException(
             status_code=500,
             detail="Unable to process the credit-risk decision.",

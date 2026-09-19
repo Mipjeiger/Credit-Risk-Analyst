@@ -2,7 +2,7 @@ import time
 from typing import Literal
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.dependencies import get_rag
 from app.api.metrics import (
@@ -29,11 +29,7 @@ router = APIRouter(tags=["predict"])
 @router.post("/predict", response_model=PredictResponse)
 def predict(
     payload: CustomerFeatures, 
-    model_name: ModelType | None = Query(
-        default=None,
-        description="Optional model name to use for prediction. If not provided, the default model will be used."
-    ),
-    # noqa: B008
+    model_name: ModelType | None = None,
     rag = Depends(get_rag)
 ):
     start = time.time()
