@@ -8,6 +8,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sqlalchemy import create_engine, text
 from .monitoring import gini, ks, psi, DEFAULT_THRESHOLDS
+from dotenv import load_dotenv
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 """Load model_metrics.csv and computed Gini/KS/PSI into Postgres for Superset."""
 
@@ -16,12 +20,16 @@ PROJECT = Path(__file__).resolve().parents[3] / "credit_risk_production"
 MODEL_DIR = PROJECT / "models" / "credit_risk"
 META = json.loads((MODEL_DIR / "metadata_credit_risk" / "metadata.json").read_text())
 PARQUET = PROJECT / "database" / "data" / "merged_credit_risk_data.parquet"
+ENV_PATH = Path(__file__).resolve().parents[3] / "data_science" / "superset" / ".env"
+
+# Load environment variables
+load_dotenv(ENV_PATH)
 
 # Postgresql connection
 POSTGRES_USER = os.getenv("POSTGRES_USER")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 POSTGRES_DB = os.getenv("POSTGRES_DB")
-POSTGRES_HOST = "localhost"
+POSTGRES_HOST = "localhost"  # Use localhost for local development; use "postgres" for Docker
 POSTGRES_PORT = os.getenv("POSTGRES_PORT")
 
 POSTGRES_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
