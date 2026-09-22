@@ -1,0 +1,266 @@
+{
+  "as_of": "2026-09-22T044901",
+  "report_file": "/Users/miftahhadiyannoor/Documents/credit_risk/data_science/reports/credit_risk_report_2026-09.md",
+  "ab_table": [
+    {
+      "model": "Logistic Regression",
+      "auc_mean": 0.9716,
+      "auc_lo": 0.9679,
+      "auc_hi": 0.9748,
+      "f1_mean": 0.9127,
+      "f1_lo": 0.9073,
+      "f1_hi": 0.9182
+    },
+    {
+      "model": "Random Forest",
+      "auc_mean": 0.9672,
+      "auc_lo": 0.9633,
+      "auc_hi": 0.9709,
+      "f1_mean": 0.9423,
+      "f1_lo": 0.9377,
+      "f1_hi": 0.9466
+    },
+    {
+      "model": "Gradient Boosting",
+      "auc_mean": 0.9498,
+      "auc_lo": 0.9452,
+      "auc_hi": 0.9539,
+      "f1_mean": 0.9358,
+      "f1_lo": 0.9309,
+      "f1_hi": 0.9404
+    },
+    {
+      "model": "Decision Tree",
+      "auc_mean": 0.9452,
+      "auc_lo": 0.9408,
+      "auc_hi": 0.9493,
+      "f1_mean": 0.9375,
+      "f1_lo": 0.9331,
+      "f1_hi": 0.9418
+    },
+    {
+      "model": "XGBoost",
+      "auc_mean": 0.9406,
+      "auc_lo": 0.9353,
+      "auc_hi": 0.9457,
+      "f1_mean": 0.9289,
+      "f1_lo": 0.9237,
+      "f1_hi": 0.9336
+    },
+    {
+      "model": "K-Nearest Neighbors",
+      "auc_mean": 0.8876,
+      "auc_lo": 0.8819,
+      "auc_hi": 0.8934,
+      "f1_mean": 0.7202,
+      "f1_lo": 0.7099,
+      "f1_hi": 0.7287
+    }
+  ],
+  "significance": [
+    {
+      "challenger": "Random Forest",
+      "auc_delta": 0.0045,
+      "p_value": 0.0033,
+      "significant_at_5pct": true
+    },
+    {
+      "challenger": "Gradient Boosting",
+      "auc_delta": 0.0219,
+      "p_value": 0.0,
+      "significant_at_5pct": true
+    },
+    {
+      "challenger": "XGBoost",
+      "auc_delta": 0.0311,
+      "p_value": 0.0,
+      "significant_at_5pct": true
+    },
+    {
+      "challenger": "K-Nearest Neighbors",
+      "auc_delta": 0.084,
+      "p_value": 0.0,
+      "significant_at_5pct": true
+    },
+    {
+      "challenger": "Decision Tree",
+      "auc_delta": 0.0265,
+      "p_value": 0.0,
+      "significant_at_5pct": true
+    }
+  ],
+  "disagreement": [
+    {
+      "model": "Random Forest",
+      "agreement": 0.967,
+      "cohen_kappa": 0.9348
+    },
+    {
+      "model": "Gradient Boosting",
+      "agreement": 0.9617,
+      "cohen_kappa": 0.9249
+    },
+    {
+      "model": "XGBoost",
+      "agreement": 0.9618,
+      "cohen_kappa": 0.9246
+    },
+    {
+      "model": "K-Nearest Neighbors",
+      "agreement": 0.8063,
+      "cohen_kappa": 0.5398
+    },
+    {
+      "model": "Decision Tree",
+      "agreement": 0.9618,
+      "cohen_kappa": 0.9251
+    }
+  ],
+  "shap_top10": {
+    "-0.2857762770255244": 0.153226,
+    "-0.25246793675135754": 0.000483,
+    "-0.24330264832585866": 0.000342,
+    "-0.9438845102595639": 0.000132,
+    "-0.3769228398332579": 0.00011,
+    "-0.6522482509630725": 8.2e-05,
+    "0.9098549031686745": 8.1e-05,
+    "-0.743785214457412": 7.6e-05,
+    "1.0102195645285803": 5.4e-05,
+    "0.3064530252933559": 5e-05
+  },
+  "shap_lime_overlap": [
+    "Credit_Score"
+  ],
+  "llm_faithfulness": {
+    "invented": [
+      "0.0000",
+      "0.0001",
+      "0.0002",
+      "0.0017",
+      "0.0037",
+      "0.692",
+      "0.717",
+      "0.7207",
+      "0.7252",
+      "0.727",
+      "0.739",
+      "0.745",
+      "0.8341",
+      "0.8404",
+      "0.8877",
+      "0.8959",
+      "0.9130",
+      "0.9290",
+      "0.9359",
+      "0.9376",
+      "0.9385",
+      "0.9393",
+      "0.9408",
+      "0.9423",
+      "0.9453",
+      "0.9499",
+      "0.9673",
+      "0.9718",
+      "0.9866"
+    ]
+  },
+  "llm_citations": {
+    "citations_checked": 8,
+    "unresolvable": [
+      [
+        "- Scorecard_Cut-off Policy.pdf",
+        121
+      ],
+      [
+        "- Scorecard_Cut-off Policy.pdf",
+        155
+      ],
+      [
+        "- Delinquency_Classification .pdf",
+        4
+      ],
+      [
+        "- Scorecard_Cut-off Policy.pdf",
+        63
+      ],
+      [
+        "- Scorecard_Cut-off Policy.pdf",
+        23
+      ]
+    ]
+  },
+  "determinism": [
+    {
+      "model": "Logistic Regression",
+      "auc_cv_pct": 33.04,
+      "f1_cv_pct": 35.08
+    },
+    {
+      "model": "Random Forest",
+      "auc_cv_pct": 32.98,
+      "f1_cv_pct": 37.59
+    },
+    {
+      "model": "Gradient Boosting",
+      "auc_cv_pct": 32.35,
+      "f1_cv_pct": 37.42
+    },
+    {
+      "model": "Decision Tree",
+      "auc_cv_pct": 31.96,
+      "f1_cv_pct": 37.51
+    },
+    {
+      "model": "XGBoost",
+      "auc_cv_pct": 31.78,
+      "f1_cv_pct": 36.82
+    },
+    {
+      "model": "K-Nearest Neighbors",
+      "auc_cv_pct": 28.31,
+      "f1_cv_pct": 19.95
+    }
+  ],
+  "audit_table": [
+    {
+      "Check": "A/B test",
+      "Criterion": "Champion's AUC edge is significant at p<0.05",
+      "Passed": true
+    },
+    {
+      "Check": "Disagreement",
+      "Criterion": "Champion vs best challenger kappa > 0.4",
+      "Passed": true
+    },
+    {
+      "Check": "SHAP stability",
+      "Criterion": "Top-10 SHAP features consistent across runs",
+      "Passed": true
+    },
+    {
+      "Check": "SHAP vs LIME",
+      "Criterion": "\u22655/10 top features overlap for the audited applicant",
+      "Passed": false
+    },
+    {
+      "Check": "LLM faithfulness",
+      "Criterion": "No invented numbers in the report",
+      "Passed": false
+    },
+    {
+      "Check": "LLM citations",
+      "Criterion": "All [DOC pN] citations resolvable in pgvector",
+      "Passed": false
+    },
+    {
+      "Check": "LLM schema",
+      "Criterion": "Response contains exactly the required JSON keys",
+      "Passed": false
+    },
+    {
+      "Check": "Determinism",
+      "Criterion": "Max AUC coefficient of variation across seeds < 5%",
+      "Passed": false
+    }
+  ]
+}
