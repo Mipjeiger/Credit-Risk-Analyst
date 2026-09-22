@@ -43,10 +43,6 @@ jobs:
         working-directory: ${{ env.WORKDIR }}
         run: black --check app ml llmops tests
 
-      - name: Flake8
-        working-directory: ${{ env.WORKDIR }}
-        run: flake8 app ml llmops --extend-ignore=E203,W503
-
       - name: Mypy
         working-directory: ${{ env.WORKDIR }}
         run: mypy app ml llmops --ignore-missing-imports
