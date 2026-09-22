@@ -1,118 +1,122 @@
+import json
+import os
 import gradio as gr
 import joblib
-import os
-import requests
-import json
-import pandas as pd
 import numpy as np
+import pandas as pd
+import requests
+import spaces
 from huggingface_hub import hf_hub_download, list_repo_files
 
-# Configuration
+# ---------------------------------------------------------
+# Configuration & Asset Loading
+# ---------------------------------------------------------
 REPO_ID = "Mipjeiger/credit-risk-challengers"
 HF_API_TOKEN = os.getenv("HF_TOKEN")
-LLM_API_URL = "https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct"
+LLM_API_URL = ("https://api-inference.huggingface.co/models/Qwen/Qwen2.5-Coder-32B-Instruct")
 
-# Load all ML models from huggingface hub repo
+# Load ML model from Hugging Face Hub
 all_files = list_repo_files(repo_id=REPO_ID)
-model_files = [f for f in all_files if f.startswith("models/") and f.endswith(".joblib")]
+model_files = [
+    f for f in all_files if f.startswith("models/") and f.endswith(".joblib")
+]
 champion_model_path = hf_hub_download(repo_id=REPO_ID, filename=model_files[0])
 model = joblib.load(champion_model_path)
 
-# Download metadata to get feature columns
+# Load feature metadata
 meta_path = hf_hub_download(
-    repo_id=REPO_ID,
-    filename="metadata/metadata.json"
+    repo_id=REPO_ID, filename="metadata/metadata.json"
 )
 with open(meta_path) as f:
     meta = json.load(f)
 
-# Feature columns
 FEATURE_COLUMNS = meta["feature_columns"]
 
-# Prediction on credit risk based on ML model
+# ---------------------------------------------------------
+# Core Helper Functions
+# ---------------------------------------------------------
 def predict_credit_risk(*values):
-    """Retrieve feature values, returns prediction results"""
+    """Retrieves feature values and returns ML prediction results."""
     input_df = pd.DataFrame([dict(zip(FEATURE_COLUMNS, values))])
-    input_df = input_df[FEATURE_COLUMNS]  # Ensure correct order
+    input_df = input_df[FEATURE_COLUMNS]  # Ensure correct column order
     prediction = model.predict(input_df)[0]
     probability = model.predict_proba(input_df)[0].max()
     return prediction, probability
 
-# LLM Explanation (Using Inference API)
 def llm_explain(prediction, probability, feature_values):
-    """Calls the LLM via Inference API to explain the prediction"""
+    """Calls the LLM via Hugging Face Inference API for interpretation."""
     if not HF_API_TOKEN:
-        return "HF API token not set. Cannot call LLM for explanation."
+        return "⚠️ HF_TOKEN environment variable is not set in Space secrets."
 
-    # Construct a prompt for the LLM
     prompt = f"""
-           You are a credit risk analyst. 
-           A model predicted class '{prediction}' with {probability:.2%} confidence based on the following features:
-           {json.dumps(dict(zip(FEATURE_COLUMNS, feature_values)), indent=2)}
-            Explain the reasoning what this means for the capplicant's credit risk and why this prediction was made.
-            Keep it concise.
-            """
+            You are a credit risk analyst. A model predicted class '{prediction}' with {probability:.2%} confidence based on the following features:
+            {json.dumps(dict(zip(FEATURE_COLUMNS, feature_values)), indent=2)}
+            Explain what this means for the applicant and why this prediction was made. 
+            Keep it concise."""
 
     headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
-    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 256, "temperature": 0.3}}
+    payload = {
+        "inputs": prompt,
+        "parameters": {"max_new_tokens": 256, "temperature": 0.3},
+    }
 
     try:
-        response = requests.post(LLM_API_URL, headers=headers, json=payload, timeout=30)
+        response = requests.post(
+            LLM_API_URL, headers=headers, json=payload, timeout=30
+        )
         response.raise_for_status()
-
-        # Handle the response if the format can be varied
         result = response.json()
+
         if isinstance(result, list) and len(result) > 0:
-            return result[0].get("generated_text", "Could not parse LLM response.").strip()
+            generated = result[0].get("generated_text", "")
+            # Clean up template prompt output if returned
+            if "<|im_start|>assistant" in generated:
+                generated = generated.split("<|im_start|>assistant")[-1]
+            return generated.strip()
         return str(result)
 
     except Exception as e:
-        return f"❌ Error calling LLM: {e}"
+        return f"❌ Error calling LLM Inference API: {e}"
 
-# Gradio Interface deployment
+# ---------------------------------------------------------
+# ZeroGPU Decorated Entrypoint
+# ---------------------------------------------------------
+@spaces.GPU
+def run_prediction_pipeline(*values):
+    """ZeroGPU allocates hardware dynamically when this function runs."""
+    pred, prob = predict_credit_risk(*values)
+    result_text = f"Prediction: {pred} (Confidence: {prob:.2%})"
+    explanation = llm_explain(pred, prob, values)
+    return result_text, explanation
+
+
+# ---------------------------------------------------------
+# Gradio Interface Build
+# ---------------------------------------------------------
 with gr.Blocks(title="Credit Risk Challenger Model") as demo:
     gr.Markdown("## Credit Risk Prediction & Interpretation")
-    gr.Markdown("Enter feature values to see the model's prediction and an LLM-generated explanation.")
+    gr.Markdown(
+        "Enter feature values to generate a credit risk assessment and an LLM summary."
+    )
 
-    # Create input components dynamically
     inputs = []
+    # Display input boxes for the primary features
     with gr.Row():
-        for i, col in enumerate(FEATURE_COLUMNS[:10]): # Display first 10 features for simplicity
+        for col in FEATURE_COLUMNS[:10]:
             with gr.Column():
                 inputs.append(gr.Number(label=col, value=0.0))
 
+    predict_btn = gr.Button("Evaluate Credit Risk", variant="primary")
+
     with gr.Row():
-        predict_btn = gr.Button("Predict")
-        explain_btn = gr.Button("Explain Prediction", interactive=False) 
+        output_pred = gr.Textbox(label="Prediction Result")
+        output_explain = gr.Textbox(label="LLM Explanation", lines=6)
 
-    output_pred = gr.Textbox(label="Prediction Result")
-    output_explain = gr.Textbox(label="LLM Explanation", lines=5)
-
-    # State to hold the last prediction details
-    last_prediction = gr.State()
-
-    def on_predict(*values):
-        pred, prob = predict_credit_risk(*values)
-        result_text = f"Prediction: {pred} (Confidence: {prob:.2%})"
-        return result_text, (pred, prob, values), gr.update(interactive=True)
-
-    def on_explain(state):
-        if state is None:
-            return "Please make a prediction first."
-        pred, prob, values = state
-        explanation = llm_explain(pred, prob, values)
-        return explanation
-
+    # Bind execution directly to the @spaces.GPU function
     predict_btn.click(
-        fn=on_predict,
+        fn=run_prediction_pipeline,
         inputs=inputs,
-        outputs=[output_pred, last_prediction, explain_btn]
-    )
-
-    explain_btn.click(
-        fn=on_explain,
-        inputs=[last_prediction],
-        outputs=[output_explain]
+        outputs=[output_pred, output_explain],
     )
 
 if __name__ == "__main__":
