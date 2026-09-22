@@ -8,4 +8,5 @@ class Settings:
     RAG_BASE_DIR = os.getenv("RAG_BASE_DIR", "./database/LLM")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+
 settings = Settings()

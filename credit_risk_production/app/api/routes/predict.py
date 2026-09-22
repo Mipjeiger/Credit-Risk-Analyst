@@ -27,6 +27,7 @@ ModelType = Literal[
 
 router = APIRouter(tags=["predict"])
 
+
 @router.post("/predict", response_model=PredictResponse)
 def predict(
     payload: CustomerFeatures,
