@@ -102,7 +102,7 @@ with gr.Blocks(title="Credit Risk Challenger Model") as demo:
     inputs = []
     # Display input boxes for the primary features
     with gr.Row():
-        for col in FEATURE_COLUMNS[:10]:
+        for col in FEATURE_COLUMNS:
             with gr.Column():
                 inputs.append(gr.Number(label=col, value=0.0))
 
