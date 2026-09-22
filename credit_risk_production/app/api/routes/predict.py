@@ -3,7 +3,6 @@ from typing import Annotated, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
-from llmops.rag_loader import CreditRiskRAG
 
 from app.api.dependencies import get_rag
 from app.api.metrics import (
@@ -14,6 +13,7 @@ from app.api.metrics import (
     RISK_SCORE_HIST,
 )
 from app.api.schemas import CustomerFeatures, PredictResponse
+from llmops.rag_loader import CreditRiskRAG
 
 # Define allowed model choices matching on model files keys
 ModelType = Literal[

@@ -1,5 +1,7 @@
 from typing import Any
+
 from pydantic import BaseModel, Field
+
 
 class CustomerFeatures(BaseModel):
     features: dict[str, Any] = Field(..., description="Customer feature row as dict")

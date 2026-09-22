@@ -1,5 +1,6 @@
 import os
 
+
 class Settings:
     MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
     MLFLOW_MODEL_NAME = os.getenv("MLFLOW_MODEL_NAME", "credit_risk_bundle")
