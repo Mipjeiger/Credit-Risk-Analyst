@@ -13,7 +13,7 @@ from huggingface_hub import hf_hub_download, list_repo_files
 # ---------------------------------------------------------
 REPO_ID = "Mipjeiger/credit-risk-challengers"
 HF_API_TOKEN = os.getenv("HF_TOKEN")
-LLM_API_URL = ("https://api-inference.huggingface.co/models/Qwen/Qwen2.5-Coder-32B-Instruct")
+LLM_API_URL = ("https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct")
 
 # Load ML model from Hugging Face Hub
 all_files = list_repo_files(repo_id=REPO_ID)
