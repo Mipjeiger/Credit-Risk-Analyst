@@ -31,10 +31,10 @@ SELECT
     accuracy,
     precision,
     recall,
-    f1,
+    f1_score,
     roc_auc,
     rank() OVER (ORDER BY roc_auc DESC) AS roc_auc_rank,
-    rank() OVER (ORDER BY f1 DESC) AS f1_rank,
+    rank() OVER (ORDER BY f1_score DESC) AS f1_rank
 FROM credit_risk.model_metrics;
 
 -- ------------------------------------------------------------------
@@ -101,7 +101,7 @@ GROUP BY approved_flag;
 -- ------------------------------------------------------------------
 -- Credit score bands × approval (for the "band × outcome" chart)
 -- ------------------------------------------------------------------
-CREATE OR REPLACE VIEW creidt_risk.v_score_band AS
+CREATE OR REPLACE VIEW credit_risk.v_score_band AS
 SELECT
     approved_flag,
     CASE
@@ -132,3 +132,23 @@ SELECT
     psi_max
 FROM credit_risk.v_monitoring_latest
 WHERE status <> 'OK';
+
+-- | 5 | Active Alerts | table | `v_monitoring_alerts` | What needs a stakeholder ping? |
+SELECT * FROM credit_risk.v_monitoring_alerts;
+
+-- | 3 | KS Over Time | line | `v_monitoring_trend` | Is rank-ordering power stable? |
+SELECT * FROM credit_risk.v_monitoring_trend;
+
+-- | 4 | PSI Heatmap | heatmap | `v_psi_heatmap` | Which models drifted, which month? |
+SELECT * FROM credit_risk.v_psi_heatmap;
+
+-- | 6 | Approval Distribution | pie | `v_approval_distribution` | Are approval volumes skewed? |
+SELECT * FROM credit_risk.v_approval_distribution;
+
+SELECT * FROM credit_risk.v_score_band;
+
+SELECT * FROM credit_risk.v_portfolio;
+
+SELECT * FROM credit_risk.v_model_scoreboard;
+
+SELECT * FROM credit_risk.v_monitoring_latest;
