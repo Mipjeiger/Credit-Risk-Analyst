@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
+from llmops.rag_loader import CreditRiskRAG
 
 from app.api.dependencies import get_rag
 from app.api.metrics import (
@@ -26,11 +27,10 @@ ModelType = Literal[
 
 router = APIRouter(tags=["predict"])
 
-
 @router.post("/predict", response_model=PredictResponse)
 def predict(
     payload: CustomerFeatures,
-    rag: Annotated[object, Depends(get_rag)],
+    rag: Annotated[CreditRiskRAG, Depends(get_rag)],
     model_name: ModelType | None = None,
 ):
     start = time.time()
