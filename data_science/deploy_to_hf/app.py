@@ -5,7 +5,6 @@ import joblib
 import traceback
 import pandas as pd
 import requests
-import spaces
 from huggingface_hub import hf_hub_download, list_repo_files
 
 # ---------------------------------------------------------
@@ -123,11 +122,10 @@ def llm_explain(prediction, probability, feature_values):
         return f"❌ Error calling LLM API: {str(e)}"
 
 # ---------------------------------------------------------
-# ZeroGPU Decorated Entrypoint - run inference pipeline
+# run inference pipeline
 # ---------------------------------------------------------
-@spaces.GPU
 def run_prediction_pipeline(model_name, *values):
-    """ZeroGPU allocates hardware dynamically when this function runs."""
+    """Pipeline to run prediction and LLM explanation."""
     try:
         pred, conf, probs = predict_credit_risk(model_name, *values)
         pred_text = (
