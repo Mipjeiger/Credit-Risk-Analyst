@@ -2,7 +2,7 @@ import json
 import os
 import gradio as gr
 import joblib
-import numpy as np
+import traceback
 import pandas as pd
 import requests
 import spaces
@@ -128,14 +128,22 @@ def llm_explain(prediction, probability, feature_values):
 @spaces.GPU
 def run_prediction_pipeline(model_name, *values):
     """ZeroGPU allocates hardware dynamically when this function runs."""
-    pred, conf, probs = predict_credit_risk(model_name, *values)
-    pred_text = (
-        f"Model: {model_name}\n"
-        f"Prediction: class {pred}\n"
-        f"Confidence: {conf:.2%}\n"
-        f"Class probabilities: {json.dumps(probs, indent=2)}"
-    )
-    explanation = llm_explain(model_name, pred, conf, values)
+    try:
+        pred, conf, probs = predict_credit_risk(model_name, *values)
+        pred_text = (
+            f"Model: {model_name}\n"
+            f"Prediction: class {pred}\n"
+            f"Confidence: {conf:.2%}\n"
+            f"Class probabilities: {json.dumps(probs, indent=2)}"
+        )
+    except Exception:
+        pred_text = f"❌ Prediction failed:\n{traceback.format_exc()}"
+
+    try:
+        explanation = llm_explain(model_name, pred, conf, probs, values)
+    except Exception:
+        explanation = f"❌ LLM explanation failed:\n{traceback.format_exc()}"
+
     return pred_text, explanation
 
 # ---------------------------------------------------------
@@ -165,4 +173,4 @@ with gr.Blocks(title="Credit Risk — Model Challenger") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(show_erro=True)
