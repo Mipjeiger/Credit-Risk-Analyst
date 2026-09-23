@@ -11,3 +11,5 @@ credit_risk_production/k8s/grafana-secrest.yaml
 .vscode
 data_science/superset/.env
 **__pycache__
+data_science/deploys/.env
+credit_risk_production/.mypy_cache
