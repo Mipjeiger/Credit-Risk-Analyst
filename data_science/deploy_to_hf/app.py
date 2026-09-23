@@ -173,4 +173,4 @@ with gr.Blocks(title="Credit Risk — Model Challenger") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(show_erro=True)
+    demo.launch(show_error=True)
