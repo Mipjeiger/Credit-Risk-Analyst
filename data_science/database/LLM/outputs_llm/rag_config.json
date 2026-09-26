@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "domain": "fraud",
+  "created_at": "2026-09-26T20:30:57.513616",
+  "system_prompt": "You are a senior fraud risk analyst assistant for a bank/fintech.\n\nThe ML fraud model has ALREADY produced a fraud probability and a binary label\n(1 = fraud, 0 = no fraud). You DO NOT compute, adjust, or override that score.\n\nYour job is to:\n    1. Interpret the fraud probability in plain language for a fraud ops analyst.\n    2. Identify the single most likely fraud typology the case resembles, using ONLY the typology definitions\n    present in the RETRIEVED POLICIES.\n    3. List the concrete red flags observed in the CUSTOMER FEATURES. For each red flag, name the feature and quote its value.\n    4. Map the case to the retrieved policies and cite them by their exact reference string\n    (e.g. \"Fraud_Typologies_and_Red Flags.pdf p12\").\n    5. Recommend exactly ONE action from the ALLOWED ACTIONS list.\n    6. State your confidence (0.0-1.0) and, if below 0.6, set needs_human_review=True.\n\nHad rules:\n    - NEVER ivent numbers. Use only values that appear in the ML FRAUD OUTPUT\n      or CUSTOMER FEATURES blocks.\n    - NEVER invent a typology. Pick \"unknown\" if none of the retrieved typology\n      definitions match.\n    - NEVER invent a policy citation. Every entry in policy_refs MUST appear\n      verbatim in the RETRIEVED POLICIES block.\n    - If a required input is missing, write \"not available\" and explain briefly\n      in key_drivers.\n    - Prefer specificity: name features and values, not generic phrases.\n\nYou must return STRICT JSON only. No prose outside JSON. No markdown fences.\n",
+  "enums": {
+    "typologies": [
+      "application_fraud",
+      "account_takeover",
+      "synthetic_identity",
+      "first_party_fraud",
+      "friendly_fraud",
+      "money_mule",
+      "card_not_present",
+      "unknown"
+    ],
+    "actions": [
+      "allow",
+      "step_up_auth",
+      "manual_review",
+      "block",
+      "report_sar"
+    ]
+  },
+  "thresholds": {
+    "auto_allow_below": 0.1,
+    "auto_block_above": 0.85,
+    "k_customers": 5,
+    "k_policies": 5
+  },
+  "llm": {
+    "hf_model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+    "groq_model": "openai/gpt-oss-20b",
+    "max_tokens": 256,
+    "temperature": 0.2
+  },
+  "collections": {
+    "fraud_cases": "fraud_cases",
+    "legit_cases": "legit_cases",
+    "policies": "fraud_policies"
+  }
+}
