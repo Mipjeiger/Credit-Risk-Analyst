@@ -1,7 +1,8 @@
-
 import os
 import json
 import traceback
+from pathlib import Path
+
 import requests
 import numpy as np
 import pandas as pd
@@ -9,22 +10,39 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 import joblib
-
-from huggingface_hub import hf_hub_download, list_repo_files
-
+from dotenv import load_dotenv
 
 # ============================================================
 # CONFIG
 # ============================================================
+BASE_PATH = Path(__file__).parent
+ENV_PATH = BASE_PATH / ".env"
+load_dotenv(ENV_PATH)
 
-REPO_ID = "Mipjeiger/credit-risk-challengers"
 HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
-
 HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
-HF_LLM_MODEL = os.getenv(
-    "HF_LLM_MODEL",
-    "Qwen/Qwen2.5-Coder-32B-Instruct",
-)
+HF_LLM_MODEL = os.getenv("HF_LLM_MODEL", "Qwen/Qwen2.5-Coder-32B-Instruct")
+
+# Helper Directory Paths
+APP_DIR   = Path(__file__).resolve().parent              # .../data_science/deploys
+DS_DIR    = APP_DIR.parent                               # .../data_science
+REPO_ROOT = DS_DIR.parent                                # .../credit_risk
+
+# Credit-risk artifacts
+CR_DIR         = REPO_ROOT / "credit_risk_production" / "models" / "credit_risk"
+CR_MODEL_DIR   = CR_DIR / "ml_credit_risk"
+CR_META_FILE   = CR_DIR / "metadata_credit_risk" / "metadata.json"
+CR_METRIC_FILE = CR_DIR / "metrics_credit_risk" / "model_metrics.csv"
+CR_BUNDLE_FILE = (REPO_ROOT/ "credit_risk_production"/ "database" / "LLM" / "outputs_llm" / "model_artifacts" / "model_bundle.joblib")
+
+# Fraud artifacts (used later, wired up now for completeness)
+FRAUD_DIR   = DS_DIR / "models" / "fraud_models"
+FRAUD_META  = DS_DIR / "models" / "metadata" / "metadata.json"
+FRAUD_METRIC = DS_DIR / "models" / "metrics" / "model_metrics.csv"
+
+# ============================================================
+# CUSTOM REACT-LIKE STREAMLIT UI
+# ============================================================
 
 st.set_page_config(
     page_title="Credit Risk | Management System",
@@ -32,11 +50,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-
-# ============================================================
-# CUSTOM REACT-LIKE STREAMLIT UI
-# ============================================================
 
 st.markdown(
     """
@@ -320,7 +333,6 @@ def metric_card(label, value, meta=""):
         unsafe_allow_html=True,
     )
 
-
 def model_card(model_name, score, metric_name="ROC AUC"):
     pct = max(0, min(100, float(score) * 100))
     st.markdown(
@@ -339,92 +351,67 @@ def model_card(model_name, score, metric_name="ROC AUC"):
 
 
 # ============================================================
-# CACHED LOADERS
+# LOCAL LOADERS
 # ============================================================
 
 @st.cache_resource(show_spinner="Loading challenger models...")
 def load_models():
-    files = list_repo_files(
-        repo_id=REPO_ID,
-        token=HF_TOKEN,
-    )
-
-    model_files = sorted(
-        f
-        for f in files
-        if f.startswith("models/")
-        and f.endswith(".joblib")
-    )
+    """Load the six credit-risk models from the local repo."""
+    if not CR_MODEL_DIR.exists():
+        raise FileNotFoundError(f"Model directory not found: {CR_MODEL_DIR}")
 
     models = {}
-
-    for f in model_files:
-        name = (
-            f.split("/")[-1]
-            .removesuffix(".joblib")
-            .replace("_", " ")
-            .title()
-        )
-
-        models[name] = joblib.load(
-            hf_hub_download(
-                repo_id=REPO_ID,
-                filename=f,
-                token=HF_TOKEN,
-            )
-        )
+    for path in sorted(CR_MODEL_DIR.glob("*.joblib")):
+        name = path.stem.replace("_", " ").title()
+        models[name] = joblib.load(path)
 
     return models
 
-
 @st.cache_resource(show_spinner="Loading preprocessors...")
 def load_preprocessors():
-    meta_path = hf_hub_download(
-        repo_id=REPO_ID,
-        filename="metadata/metadata.json",
-        token=HF_TOKEN,
-    )
+    """Load metadata + Scaler + Label encoders."""
+    if not CR_META_FILE.exists():
+        raise FileNotFoundError(f"Metadata file not found: {CR_META_FILE}")
 
-    scaler_path = hf_hub_download(
-        repo_id=REPO_ID,
-        filename="metadata/scaler.joblib",
-        token=HF_TOKEN,
-    )
-
-    encoder_path = hf_hub_download(
-        repo_id=REPO_ID,
-        filename="metadata/label_encoders.joblib",
-        token=HF_TOKEN,
-    )
-
-    with open(meta_path, "r") as f:
+    with open(CR_META_FILE, "r") as f:
         meta = json.load(f)
 
-    scaler = joblib.load(scaler_path)
-    encoders = joblib.load(encoder_path)
+    if CR_BUNDLE_FILE.exists():
+        bundle = joblib.load(CR_BUNDLE_FILE)
+        scaler = bundle.get("scaler")
+        encoders = bundle.get("label_encoders", {})
+        if "feature_columns" in bundle:
+            meta["feature_columns"] = bundle["feature_columns"]
+
+    else:
+        # Fallback for standalone preprocessor
+        scaler_path = CR_META_FILE.parent / "scaler.joblib"
+        enc_path    = CR_META_FILE.parent / "label_encoders.joblib"
+        if not scaler_path.exists() or not enc_path.exists():
+            raise FileNotFoundError(
+                "No scaler/label_encoders found. Either:\n"
+                f"  - provide {CR_BUNDLE_FILE}, or\n"
+                f"  - place scaler.joblib and label_encoders.joblib in "
+                f"{CR_META_FILE.parent}"
+            )
+        scaler = joblib.load(scaler_path)
+        encoders = joblib.load(enc_path)
 
     return meta, scaler, encoders
 
-
 @st.cache_data(show_spinner="Loading model metrics...")
 def load_metrics():
-    path = hf_hub_download(
-        repo_id=REPO_ID,
-        filename="metrics/model_metrics.csv",
-        token=HF_TOKEN,
-    )
+    if not CR_METRIC_FILE.exists():
+        raise FileNotFoundError(f"Metrics not found: {CR_METRIC_FILE}")
 
-    df = pd.read_csv(path)
+    df = pd.read_csv(CR_METRIC_FILE)
 
     df.columns = [
         c.strip().lower().replace(" ", "_")
         for c in df.columns
     ]
 
-    df = df.loc[
-        :,
-        ~df.columns.str.startswith("unnamed"),
-    ]
+    df = df.loc[:, ~df.columns.str.startswith("unnamed")]
 
     aliases = {
         "model_name": "model",
@@ -432,38 +419,28 @@ def load_metrics():
         "f1_weighted": "f1",
         "f1_score": "f1",
     }
-
-    df = df.rename(
-        columns={
-            k: v
-            for k, v in aliases.items()
-            if k in df.columns
-        }
-    )
+    df = df.rename(columns={k: v for k, v in aliases.items() if k in df.columns})
 
     if "model" not in df.columns:
-        st.error(
-            "model_metrics.csv is missing a model-name column."
-        )
+        st.error("model_metrics.csv is missing a model-name column.")
         st.stop()
 
     return df
 
-
 @st.cache_data(show_spinner="Loading portfolio sample...")
 def load_portfolio_sample(n=5000):
-    try:
-        path = hf_hub_download(
-            repo_id=REPO_ID,
-            filename="data/portfolio_sample.parquet",
-            token=HF_TOKEN,
-        )
-
-        return pd.read_parquet(path).head(n)
-
-    except Exception:
-        return None
-
+    """
+    Optional. Looks for a portfolio sample parquet next to the models.
+    Returns None if not present so the Overview tab degrades gracefully.
+    """
+    candidates = [
+        DS_DIR / "data" / "portfolio_sample.parquet",
+        REPO_ROOT / "credit_risk_production" / "database" / "data" / "portfolio_sample.parquet",
+    ]
+    for path in candidates:
+        if path.exists():
+            return pd.read_parquet(path).head(n)
+    return None
 
 # ============================================================
 # INITIALIZE MODEL ARTIFACTS
@@ -479,11 +456,9 @@ except Exception as e:
     st.code(traceback.format_exc())
     st.stop()
 
-
 if not MODELS:
     st.error("No challenger .joblib models were found.")
     st.stop()
-
 
 MODEL_CHOICES = sorted(MODELS.keys())
 
@@ -493,7 +468,6 @@ DEFAULT_MODEL = (
     else MODEL_CHOICES[0]
 )
 
-
 # ============================================================
 # SCORING
 # ============================================================
@@ -501,10 +475,7 @@ DEFAULT_MODEL = (
 def prepare_input(raw):
     df = pd.DataFrame(
         [
-            {
-                c: raw.get(c, 0)
-                for c in FEATURES
-            }
+            {c: raw.get(c, 0) for c in FEATURES}
         ]
     )
 
@@ -512,28 +483,12 @@ def prepare_input(raw):
 
     for col, le in LABEL_ENCODERS.items():
         if col in df.columns:
-            df[col] = (
-                df[col]
-                .astype(str)
-                .map(
-                    lambda s:
-                    le.transform([s])[0]
-                    if s in le.classes_
-                    else -1
-                )
+            df[col] = (df[col].astype(str).map(lambda s: le.transform([s])[0] if s in le.classes_ else -1)
             )
 
-    df = (
-        df
-        .apply(pd.to_numeric, errors="coerce")
-        .fillna(0)
-    )
+    df = (df.apply(pd.to_numeric, errors="coerce").fillna(0))
 
-    return pd.DataFrame(
-        SCALER.transform(df),
-        columns=df.columns,
-    )
-
+    return pd.DataFrame(SCALER.transform(df),columns=df.columns,)
 
 def score_one(model_name, raw):
     model = MODELS[model_name]
@@ -736,20 +691,44 @@ def explain_prediction(result, raw):
 with st.sidebar:
     st.markdown(
         """
-        <div style="
-            font-size:1.25rem;
-            font-weight:750;
-            margin-bottom:0.2rem;
-        ">
+        <div style="font-size:1.25rem;font-weight:750;margin-bottom:0.2rem;">
             🏦 Credit Risk
         </div>
-
-        <div style="
-            color:#9ca3af;
-            font-size:0.8rem;
-            margin-bottom:1.5rem;
-        ">
+        <div style="color:#9ca3af;font-size:0.8rem;margin-bottom:1.5rem;">
             Management System
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+
+    st.markdown(
+        f"""
+        <div style="font-size:0.75rem;color:#9ca3af;">
+            MODEL REPOSITORY
+        </div>
+        <div style="
+            font-size:0.72rem;
+            margin-top:0.35rem;
+            word-break:break-word;
+            color:#e5e7eb;
+        ">
+            {CR_MODEL_DIR}
+        </div>
+
+        <div style="margin-top:1rem;font-size:0.75rem;color:#9ca3af;">
+            MODELS
+        </div>
+        <div style="font-size:0.9rem;font-weight:700;margin-top:0.25rem;">
+            {len(MODELS)} challengers
+        </div>
+
+        <div style="margin-top:1rem;font-size:0.75rem;color:#9ca3af;">
+            FEATURES
+        </div>
+        <div style="font-size:0.9rem;font-weight:700;margin-top:0.25rem;">
+            {len(FEATURES)}
         </div>
         """,
         unsafe_allow_html=True,
@@ -772,45 +751,28 @@ with st.sidebar:
     st.markdown(
         f"""
         <div style="font-size:0.75rem;color:#9ca3af;">
-            MODEL REPOSITORY
+            MODEL DIRECTORY
         </div>
         <div style="
-            font-size:0.78rem;
+            font-size:0.72rem;
             margin-top:0.35rem;
             word-break:break-word;
+            color:#e5e7eb;
         ">
-            {REPO_ID}
+            {CR_MODEL_DIR}
         </div>
 
-        <div style="
-            margin-top:1rem;
-            font-size:0.75rem;
-            color:#9ca3af;
-        ">
+        <div style="margin-top:1rem;font-size:0.75rem;color:#9ca3af;">
             MODELS
         </div>
-
-        <div style="
-            font-size:0.9rem;
-            font-weight:700;
-            margin-top:0.25rem;
-        ">
+        <div style="font-size:0.9rem;font-weight:700;margin-top:0.25rem;">
             {len(MODELS)} challengers
         </div>
 
-        <div style="
-            margin-top:1rem;
-            font-size:0.75rem;
-            color:#9ca3af;
-        ">
+        <div style="margin-top:1rem;font-size:0.75rem;color:#9ca3af;">
             FEATURES
         </div>
-
-        <div style="
-            font-size:0.9rem;
-            font-weight:700;
-            margin-top:0.25rem;
-        ">
+        <div style="font-size:0.9rem;font-weight:700;margin-top:0.25rem;">
             {len(FEATURES)}
         </div>
         """,
