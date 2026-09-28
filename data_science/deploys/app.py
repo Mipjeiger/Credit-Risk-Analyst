@@ -991,7 +991,6 @@ def tab_overview():
             "portfolio distribution charts."
         )
 
-
 # ============================================================
 # APPLICANT INPUT COMPONENT
 # ============================================================
