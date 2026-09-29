@@ -11,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import joblib
 from dotenv import load_dotenv
-from deploys.api_client import predict as api_predict, health as api_health
+from deploys.api_client import predict as api_predict
 
 # ============================================================
 # CONFIG
@@ -23,6 +23,8 @@ load_dotenv(ENV_PATH)
 HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
 HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
 HF_LLM_MODEL = os.getenv("HF_LLM_MODEL", "Qwen/Qwen2.5-Coder-32B-Instruct")
+
+API_BASE_URL = os.getenv("API_BASE_URL", "http://api:8000")
 
 # Helper Directory Paths
 APP_DIR   = Path(__file__).resolve().parent              # .../data_science/deploys
@@ -355,7 +357,7 @@ def model_card(model_name, score, metric_name="ROC AUC"):
 
 # Credit risk features list
 with open(CR_META_FILE) as f:
-    CR_FEATURES = json.load(f)["feature_columns"]
+    FEATURES = json.load(f)["feature_columns"]
 
 # Fraud features list
 FRAUD_FEATURES = []
@@ -377,30 +379,78 @@ if FRAUD_BUNDLE.exists():
 # ============================================================
 # LOADERS DEPENDENCIES COMPONENTS
 # ============================================================
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_model_choices():
+    try:
+        r = requests.get(f"{API_BASE_URL}/models")
+        r.raise_for_status()
+        return sorted(r.json()["models"])
+    except Exception:
+        # Fallback: hardcode to load models
+        return ["Logistic Regression", "Random Forest", "Gradient Boosting",
+                "XGBoost", "K-Nearest Neighbors", "Decision Tree"]
 
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_fraud_model_choices():
+    try:
+        r = requests.get(f"{API_BASE_URL}/fraud/models", timeout=10)
+        r.raise_for_status()
+        return sorted(r.json()["models"])
+    except Exception:
+        # Fallback: hardcode to load models
+        return ["Logistic Regression", "Random Forest", "Gradient Boosting",
+                "XGBoost", "K-Nearest Neighbors", "Decision Tree"]
+
+@st.cache_data(ttl=60, show_spinner="Loading model metrics...")
+def load_metrics():
+    if not CR_METRIC_FILE.exists():
+        raise FileNotFoundError(f"Metrics file not found: {CR_METRIC_FILE}")
+    df = pd.read_csv(CR_METRIC_FILE)
+    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    df = df.loc[:, ~df.columns.str.startswith("unnamed")]
+    df = df.rename(columns={
+        "model_name": "model", "modelname": "model",
+        "f1_weighted": "f1", "f1_score": "f1"
+    })
+
+    if "model" not in df.columns:
+        st.error("❌ Metrics file does not contain 'model' column.")
+        st.stop()
+    return df
+
+@st.cache_data(ttl=60, show_spinner="Loading fraud metrics...")
+def load_fraud_metrics():
+    if not FRAUD_METRIC.exists():
+        return None
+    df = pd.read_csv(FRAUD_METRIC)
+    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    df = df.loc[:, ~df.columns.str.startswith("unnamed")]
+    df = df.rename(columns={
+        "model_name": "model", "modelname": "model",
+        "f1_weighted": "f1", "f1_score": "f1",
+    })
+    return df
+
+def load_portfolio_sample(n=5000):
+    for path in [DS_DIR / "data" / "portfolio_sample.parquet", REPO_ROOT / "credit_risk_production" / "database" / "data" / "portfolio_sample.parquet"]:
+        if path.exists():
+            return pd.read_parquet(path).head(n)
+
+    return None # If no sample file is found, return None
+
+# ===========================================================
+# RETRIEVING LOADER FUNCTIONS
+# ===========================================================
+# Insert metdata by retrieving
+MODEL_CHOICES = fetch_model_choices()
+DEFAULT_MODEL= "Gradient Boosting" if "Gradient Boosting" in MODEL_CHOICES else MODEL_CHOICES[0]
+
+FRAUD_MODEL_CHOICES = fetch_fraud_model_choices()
+FRAUD_DEFAULT_MODEL = "XGBoost" if "XGBoost" in FRAUD_MODEL_CHOICES else FRAUD_MODEL_CHOICES[0]
 
 # ============================================================
 # SCORING
 # ============================================================
-
-def prepare_input(raw):
-    df = pd.DataFrame(
-        [
-            {c: raw.get(c, 0) for c in FEATURES}
-        ]
-    )
-
-    df = df[FEATURES]
-
-    for col, le in LABEL_ENCODERS.items():
-        if col in df.columns:
-            df[col] = (df[col].astype(str).map(lambda s: le.transform([s])[0] if s in le.classes_ else -1)
-            )
-
-    df = (df.apply(pd.to_numeric, errors="coerce").fillna(0))
-
-    return pd.DataFrame(SCALER.transform(df),columns=df.columns,)
-
 def score_one(model_name, raw):
     """Delegate to the FastAPI /predict endpoint"""
     try:
@@ -413,10 +463,35 @@ def score_one(model_name, raw):
         }
     except requests.HTTPError as e:
         body = e.response.text[:500] if e.response is not None else ""
+        code = e.response.status_code if e.response is not None else "N/A"
         raise RuntimeError(f"API /predict failed: {e}\n{body}") from e
 
     except requests.RequestException as e:
         raise RuntimeError(f"API /predict request failed: {e}") from e
+
+def fraud_score_one(model_name, raw):
+    """Delegate to the FastAPI /fraud/predict endpoint"""
+    try:
+        r = requests.post(
+            f"{API_BASE_URL}/fraud/predict",
+            params={"model_name": model_name} if model_name else {},
+            json={"features": raw},
+            timeout=30
+        )
+        r.raise_for_status()
+        result = r.json()
+        return {
+            "model": result.get("model_used", model_name),
+            "predicted_class": int(result["predicted_flag"]),
+            "confidence": float(result.get("primary_fraud_probability", 0.0)),
+            "class_probabilities": result.get("class_probabilities", {})
+        }
+    except requests.HTTPError as e:
+        body = e.response.text[:500] if e.response is not None else ""
+        code = e.response.status_code if e.response is not None else "?"
+        raise RuntimeError(f"API {code}: {body}") from e
+    except requests.RequestException as e:
+        raise RuntimeError(f"API unreachable: {e}") from e
 
 def score_all(raw):
     rows = []
@@ -590,6 +665,13 @@ def explain_prediction(result, raw):
 # ============================================================
 
 with st.sidebar:
+    try:
+        from deploys.api_client import health as api_health
+        h = api_health()
+        st.markdown('<span class="status-badge">● API healthy</span>', unsafe_allow_html=True)
+    except Exception:
+        st.markdown('<span class="status-badge" style="background:#fee2e2;color:#991b1b;">● API down</span>', unsafe_allow_html=True)
+
     st.markdown(
         """
         <div style="font-size:1.25rem;font-weight:750;margin-bottom:0.2rem;">
@@ -622,7 +704,7 @@ with st.sidebar:
             MODELS
         </div>
         <div style="font-size:0.9rem;font-weight:700;margin-top:0.25rem;">
-            {len(MODELS)} challengers
+            {len(MODEL_CHOICES)} challengers
         </div>
 
         <div style="margin-top:1rem;font-size:0.75rem;color:#9ca3af;">
@@ -645,6 +727,7 @@ with st.sidebar:
             "💬 LLM Explain",
         ],
         label_visibility="collapsed",
+        key="main_navigation",
     )
 
     st.markdown("---")
@@ -667,7 +750,7 @@ with st.sidebar:
             MODELS
         </div>
         <div style="font-size:0.9rem;font-weight:700;margin-top:0.25rem;">
-            {len(MODELS)} challengers
+            {len(MODEL_CHOICES)} challengers
         </div>
 
         <div style="margin-top:1rem;font-size:0.75rem;color:#9ca3af;">
@@ -680,7 +763,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-
 # ============================================================
 # HEADER
 # ============================================================
@@ -688,22 +770,15 @@ with st.sidebar:
 st.markdown(
     """
     <div class="header-card">
-        <div style="
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            gap:1rem;
-        ">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;">
             <div>
-                <div class="dashboard-title">
-                    Credit Risk Monitoring
-                </div>
+                <div class="dashboard-title">Credit Risk Monitoring</div>
                 <div class="dashboard-subtitle">
-                    Merchant onboarding, model scoring,
-                    monitoring and LLM-assisted explanations
+                    Merchant onboarding, model scoring, monitoring and LLM-assisted explanations
                 </div>
             </div>
-           
+            <div class="status-badge">● Production</div>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -728,7 +803,7 @@ def tab_overview():
     with c1:
         metric_card(
             "Challenger models",
-            len(MODELS),
+            len(MODEL_CHOICES),
             "Active model bundle",
         )
 
@@ -1410,6 +1485,66 @@ def tab_explain():
         '<div class="section-title">LLM Explanation</div>',
         unsafe_allow_html=True,
     )
+
+    # Initialize chat history for this session
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "assistant", "content": "Hello! I'm your Credit Risk Assistant. How can I help you today?"}
+        ]
+
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Accept user input
+    if prompt := st.chat_input("Ask a question about credit risk..."):
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        # Display user message in chat message container
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Generate and display assistant response
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
+
+            try:
+                # Construct messages for the API using st.session_state.messages
+                api_messages = [
+                    {"role": m["role"], "content": m["content"]}
+                    for m in st.session_state.messages
+                ]
+                api_messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
+
+                response = requests.post(
+                    HF_ROUTER_URL,
+                    headers={
+                        "Authorization": f"Bearer {HF_TOKEN}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": HF_LLM_MODEL,
+                        "messages": api_messages,
+                        "max_tokens": 512,
+                        "temperature": 0.3
+                    },
+                    timeout=45,
+                )
+                response.raise_for_status()
+                data = response.json()
+                full_response = data["choices"][0]["message"]["content"].strip()
+
+            except Exception as e:
+                full_response = f"❌ LLM call failed: {str(e)}"
+
+            # Display the response
+            message_placeholder.markdown(full_response)
+
+        # Add assistant response to chat history
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
 
     st.caption(
         "The LLM explains the ML result; it does not replace "
