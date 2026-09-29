@@ -11,6 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import joblib
 from dotenv import load_dotenv
+from deploys.api_client import predict as api_predict, health as api_health
 
 # ============================================================
 # CONFIG
@@ -39,6 +40,7 @@ CR_BUNDLE_FILE = (REPO_ROOT/ "credit_risk_production"/ "database" / "LLM" / "out
 FRAUD_DIR   = DS_DIR / "models" / "fraud_models"
 FRAUD_META  = DS_DIR / "models" / "metadata" / "metadata.json"
 FRAUD_METRIC = DS_DIR / "models" / "metrics" / "model_metrics.csv"
+FRAUD_BUNDLE = FRAUD_DIR / "model_bundle.joblib"
 
 # ============================================================
 # CUSTOM REACT-LIKE STREAMLIT UI
@@ -302,8 +304,6 @@ div[data-baseweb="select"] > div,
 """,
     unsafe_allow_html=True,
 )
-
-
 # ============================================================
 # HELPERS
 # ============================================================
@@ -349,124 +349,35 @@ def model_card(model_name, score, metric_name="ROC AUC"):
         unsafe_allow_html=True,
     )
 
-
 # ============================================================
-# LOCAL LOADERS
-# ============================================================
-
-@st.cache_resource(show_spinner="Loading challenger models...")
-def load_models():
-    """Load the six credit-risk models from the local repo."""
-    if not CR_MODEL_DIR.exists():
-        raise FileNotFoundError(f"Model directory not found: {CR_MODEL_DIR}")
-
-    models = {}
-    for path in sorted(CR_MODEL_DIR.glob("*.joblib")):
-        name = path.stem.replace("_", " ").title()
-        models[name] = joblib.load(path)
-
-    return models
-
-@st.cache_resource(show_spinner="Loading preprocessors...")
-def load_preprocessors():
-    """Load metadata + Scaler + Label encoders."""
-    if not CR_META_FILE.exists():
-        raise FileNotFoundError(f"Metadata file not found: {CR_META_FILE}")
-
-    with open(CR_META_FILE, "r") as f:
-        meta = json.load(f)
-
-    if CR_BUNDLE_FILE.exists():
-        bundle = joblib.load(CR_BUNDLE_FILE)
-        scaler = bundle.get("scaler")
-        encoders = bundle.get("label_encoders", {})
-        if "feature_columns" in bundle:
-            meta["feature_columns"] = bundle["feature_columns"]
-
-    else:
-        # Fallback for standalone preprocessor
-        scaler_path = CR_META_FILE.parent / "scaler.joblib"
-        enc_path    = CR_META_FILE.parent / "label_encoders.joblib"
-        if not scaler_path.exists() or not enc_path.exists():
-            raise FileNotFoundError(
-                "No scaler/label_encoders found. Either:\n"
-                f"  - provide {CR_BUNDLE_FILE}, or\n"
-                f"  - place scaler.joblib and label_encoders.joblib in "
-                f"{CR_META_FILE.parent}"
-            )
-        scaler = joblib.load(scaler_path)
-        encoders = joblib.load(enc_path)
-
-    return meta, scaler, encoders
-
-@st.cache_data(show_spinner="Loading model metrics...")
-def load_metrics():
-    if not CR_METRIC_FILE.exists():
-        raise FileNotFoundError(f"Metrics not found: {CR_METRIC_FILE}")
-
-    df = pd.read_csv(CR_METRIC_FILE)
-
-    df.columns = [
-        c.strip().lower().replace(" ", "_")
-        for c in df.columns
-    ]
-
-    df = df.loc[:, ~df.columns.str.startswith("unnamed")]
-
-    aliases = {
-        "model_name": "model",
-        "modelname": "model",
-        "f1_weighted": "f1",
-        "f1_score": "f1",
-    }
-    df = df.rename(columns={k: v for k, v in aliases.items() if k in df.columns})
-
-    if "model" not in df.columns:
-        st.error("model_metrics.csv is missing a model-name column.")
-        st.stop()
-
-    return df
-
-@st.cache_data(show_spinner="Loading portfolio sample...")
-def load_portfolio_sample(n=5000):
-    """
-    Optional. Looks for a portfolio sample parquet next to the models.
-    Returns None if not present so the Overview tab degrades gracefully.
-    """
-    candidates = [
-        DS_DIR / "data" / "portfolio_sample.parquet",
-        REPO_ROOT / "credit_risk_production" / "database" / "data" / "portfolio_sample.parquet",
-    ]
-    for path in candidates:
-        if path.exists():
-            return pd.read_parquet(path).head(n)
-    return None
-
-# ============================================================
-# INITIALIZE MODEL ARTIFACTS
+# METADATA
 # ============================================================
 
-try:
-    MODELS = load_models()
-    META, SCALER, LABEL_ENCODERS = load_preprocessors()
-    FEATURES = META["feature_columns"]
+# Credit risk features list
+with open(CR_META_FILE) as f:
+    CR_FEATURES = json.load(f)["feature_columns"]
 
-except Exception as e:
-    st.error("Unable to load the credit-risk model repository.")
-    st.code(traceback.format_exc())
-    st.stop()
+# Fraud features list
+FRAUD_FEATURES = []
+if FRAUD_META.exists():
+    with open(FRAUD_META) as f:
+        FRAUD_FEATURES = json.load(f).get("feature_columns", [])
 
-if not MODELS:
-    st.error("No challenger .joblib models were found.")
-    st.stop()
+# Label encoders for building categorical
+LABEL_ENCODERS = {}
+if CR_BUNDLE_FILE.exists():
+    _cr_bundle = joblib.load(CR_BUNDLE_FILE)
+    LABEL_ENCODERS = _cr_bundle.get("label_encoders", {})
 
-MODEL_CHOICES = sorted(MODELS.keys())
+FRAUD_LABEL_ENCODERS = {}
+if FRAUD_BUNDLE.exists():
+    _fraud_bundle = joblib.load(FRAUD_BUNDLE)
+    FRAUD_LABEL_ENCODERS = _fraud_bundle.get("label_encoders", {})
 
-DEFAULT_MODEL = (
-    "Xgboost"
-    if "Xgboost" in MODELS
-    else MODEL_CHOICES[0]
-)
+# ============================================================
+# LOADERS DEPENDENCIES COMPONENTS
+# ============================================================
+
 
 # ============================================================
 # SCORING
@@ -491,31 +402,21 @@ def prepare_input(raw):
     return pd.DataFrame(SCALER.transform(df),columns=df.columns,)
 
 def score_one(model_name, raw):
-    model = MODELS[model_name]
+    """Delegate to the FastAPI /predict endpoint"""
+    try:
+        result = api_predict(raw, model_name=model_name)
+        return {
+            "model": result.get("model_used", model_name),
+            "predicted_class": int(result["predicted_flag"]),
+            "confidence": float(result["primary_risk_probability"]),
+            "class_probabilities": result["class_probabilities"]
+        }
+    except requests.HTTPError as e:
+        body = e.response.text[:500] if e.response is not None else ""
+        raise RuntimeError(f"API /predict failed: {e}\n{body}") from e
 
-    X = prepare_input(raw)
-
-    pred = int(
-        model.predict(X)[0]
-    )
-
-    proba = model.predict_proba(X)[0]
-
-    classes = [
-        int(c)
-        for c in model.classes_
-    ]
-
-    return {
-        "model": model_name,
-        "predicted_class": pred,
-        "confidence": float(proba.max()),
-        "class_probabilities": {
-            f"class_{c}": float(p)
-            for c, p in zip(classes, proba)
-        },
-    }
-
+    except requests.RequestException as e:
+        raise RuntimeError(f"API /predict request failed: {e}") from e
 
 def score_all(raw):
     rows = []
@@ -1499,7 +1400,6 @@ Fraud ML model
         """,
         language="text",
     )
-
 
 # ============================================================
 # TAB 5 — LLM EXPLAIN
