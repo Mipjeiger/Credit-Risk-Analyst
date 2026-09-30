@@ -1,9 +1,7 @@
 import time
 from typing import Annotated, Literal
-
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
-
 from app.api.dependencies import get_rag
 from app.api.metrics import (
     ML_PREDICTIONS,
@@ -26,7 +24,6 @@ ModelType = Literal[
 ]
 
 router = APIRouter(tags=["predict"])
-
 
 @router.post("/predict", response_model=PredictResponse)
 def predict(
@@ -62,3 +59,7 @@ def predict(
 
     finally:
         REQUEST_LATENCY.labels(endpoint="/predict").observe(time.time() - start)
+
+@router.get("/models")
+def list_models(rag=Depends(get_rag)):
+    return {"models": sorted(rag.models.keys())}

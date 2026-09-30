@@ -16,8 +16,6 @@ from app.api.schemas import CustomerFeatures, DecideResponse
 router = APIRouter(tags=["decide"])
 
 # Endpoint
-
-
 @router.post("/decide", response_model=DecideResponse)
 def decide(payload: CustomerFeatures, rag=Depends(get_rag)):  # noqa: B008
 

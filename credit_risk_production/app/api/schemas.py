@@ -1,18 +1,14 @@
 from typing import Any
-
 from pydantic import BaseModel, Field
-
 
 class CustomerFeatures(BaseModel):
     features: dict[str, Any] = Field(..., description="Customer feature row as dict")
-
 
 class PredictResponse(BaseModel):
     model_used: str
     predicted_flag: int
     class_probabilities: dict[str, float]
     primary_risk_probability: float
-
 
 class DecideResponse(BaseModel):
     decision_route: str
