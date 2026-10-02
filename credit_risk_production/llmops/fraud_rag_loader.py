@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import requests
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -13,19 +14,25 @@ from dotenv import load_dotenv
 
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from huggingface_hub import InferenceClient
-from groq import Groq
-from openai import OpenAI
+from llmops.llm_providers import call_llm
 
 # -------------------------------------
 # Configuration
 # -------------------------------------
+
+# Path configuration
 BASE_PATH = Path(__file__).resolve().parents[1]
 LLM_PATH = BASE_PATH / "database" / "LLM"
 ENV_PATH = BASE_PATH / ".env"
+
+# 9router LLM providers and API keys
 NINEROUTER_BASE_URL = os.getenv("NINEROUTER_BASE_URL")
 NINEROUTER_API_KEY = os.getenv("NINEROUTER_API_KEY")
 NINEROUTER_MODEL = "sragent"
+
+# Huggingface Inference API key
+HF_ROUTER_URL = "https://router.huggingface.co/v1"
+GROQ_URL      = "https://api.groq.com/openai/v1/chat/completions"
 
 load_dotenv(ENV_PATH)
 
@@ -40,13 +47,29 @@ class FraudRiskRAG:
         # --- config and manifest files ---
         cfg_path = self.base / "outputs_llm" / "rag_config.json"
         if not cfg_path.exists():
-            raise FileNotFoundError(f"RAG config file not found at {cfg_path}")
-        self.cfg = json.loads((self.base / "outputs_llm" / "rag_config.json").read_text())
+            raise FileNotFoundError(
+            f"Fraud RAG config not found.\n"
+            f"  base_dir = {self.base}\n"
+            f"  expected = {cfg_path}\n"
+            f"Hint: set FRAUD_RAG_BASE_DIR to the folder that contains "
+            f"'outputs_llm/rag_config.json'."
+            )
 
-        manfiest_path = self.base / "outputs_llm" / "pipeline_manifest.json"
-        if not manfiest_path.exists():
-            raise FileNotFoundError(f"Pipeline manifest file not found at {manfiest_path}")
-        self.manifest = json.loads((self.base / "outputs_llm" / "pipeline_manifest.json").read_text())
+        self.cfg = json.loads(cfg_path.read_text())
+        logger.info(f"Loaded fraud RAG config from {cfg_path}")
+
+        manifest_path = self.base / "outputs_llm" / "pipeline_manifest.json"
+        if manifest_path.exists():
+            try:
+                self.manifest = json.loads(manifest_path.read_text())
+            except Exception as e:
+                logger.warning(f"Failed to load pipeline manifest from {manifest_path}: {e}")
+
+                self.manifest = {}
+
+        else:
+            logger.warning(f"Pipeline manifest file not found at {manifest_path}")
+            self.manifest = {}
 
         # --- model bundle ---
         if bundle_path is None:
@@ -73,29 +96,28 @@ class FraudRiskRAG:
         chroma_dir = self.base / "chroma_store"
         collections = self.cfg["collections"]
 
+        # --- Fraud config omits the key for collections
+        fraud_coll = collections.get("fraud_cases", "fraud_cases")
+        legit_coll = collections.get("legit_cases", "legit_cases")
+        policy_coll = collections.get("policies", "fraud_policies")
+
+        logger.info("Fraud collections resolved: %s | %s | %s", fraud_coll, legit_coll, policy_coll)
+
         self.customer_store = Chroma(
-            collection_name=collections["fraud_cases"],
+            collection_name=fraud_coll,
             embedding_function=self.embeddings,
             persist_directory=str(chroma_dir)
         )
         self.legit_store = Chroma(
-            collection_name=collections["legit_cases"],
+            collection_name=legit_coll,
             embedding_function=self.embeddings,
             persist_directory=str(chroma_dir)
         )
         self.policy_store = Chroma(
-            collection_name=collections["policies"],
+            collection_name=policy_coll,
             embedding_function=self.embeddings,
             persist_directory=str(chroma_dir)
         )
-
-        # --- LLM clients ---
-        hf_key = os.getenv("HUGGINGFACE_API_KEY")
-        groq_key = os.getenv("GROQ_API_KEY")
-        ninerouter_key = os.getenv("NINEROUTER_API_KEY")
-        self.hf_client = InferenceClient(token=hf_key) if hf_key else None
-        self.groq_client = InferenceClient(token=groq_key) if groq_key else None
-        self.ninerouter_client = OpenAI(base_url=NINEROUTER_BASE_URL, api_key=NINEROUTER_API_KEY) if ninerouter_key else None
 
         logger.info(
             "FraudRiskRAG ready | models=%d | features=%d | bundle=%s",
@@ -141,50 +163,16 @@ class FraudRiskRAG:
         }
 
     # -------------------- LLM  --------------------
-    def llm(self, messages, max_tokens: int = 512, temperature: float = 0.3) -> Dict[str, str]:
-        """HF Inference -> Groq -> Ninerouter Fallback"""
-        # Huggingface Inference API
-        if self.hf_client:
-            try:
-                r = self.hf_client.chat.completions.create(
-                    model=self.cfg["llm"]["hf_model"],
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature
-                )
-                return {"text": r.choices[0].message.content, "provider": "huggingface"}
-            except Exception as e:
-                logger.error(f"Huggingface Inference failed: {e}")
-
-        # Groq Inference API
-        if self.groq_client:
-            try:
-                r = self.groq_client.chat.completions.create(
-                    model=self.cfg["llm"]["groq_model"],
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature
-                )
-                return {"text": r.choices[0].message.content, "provider": "groq"}
-            except Exception as e:
-                logger.error(f"Groq Inference failed: {e}")
-
-        # Ninerouter Fallback
-        if self.ninerouter_client:
-            try:
-                r = self.ninerouter_client.chat.completions.create(
-                    model=NINEROUTER_MODEL,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    extra_body={"num_ctx": 16384},
-                    stream=True
-                )
-                return {"text": r.choices[0].message.content, "provider": "ninerouter"}
-            except Exception as e:
-                logger.error(f"Ninerouter Inference failed: {e}")
-
-        raise RuntimeError("No LLM provider available. Please check your API keys and configuration.")
+    def _llm(self, messages, max_tokens: int = 512, temperature: float = 0.3):
+       cfg = self.cfg.get("llm", {})
+       return call_llm(
+           messages=messages,
+           hf_model=cfg.get("hf_model", "Qwen/Qwen2.5-Coder-32B-Instruct"),
+           groq_model=cfg.get("groq_model", "openai/gpt-oss-20b"),
+           niner_model=cfg.get("9router_model", "sragent"),
+           max_tokens=max_tokens,
+           temperature=temperature
+       )
 
     #  -------------------- Decide --------------------
     def decide(self, row: pd.Series | dict, model_name: Optional[str] = None) -> Dict[str, Any]:
@@ -252,7 +240,7 @@ class FraudRiskRAG:
             "Return STRICT JSON only."
         )
 
-        out = self.llm(
+        out = self._llm(
             messages=[
                 {"role": "system", "content": self.cfg["system_prompt"]},
                 {"role": "user", "content": user_msg}
@@ -265,7 +253,8 @@ class FraudRiskRAG:
         txt = re.sub(r"^```(json)?|```$", "", out["text"].strip(), flags=re.MULTILINE).strip()
         try:
             parsed = json.loads(txt)
-        except Exception:
+        except Exception as e:
+            logger.error("Failed to parse LLM output: %s", e)
             m = re.search(r"\{.*\}", txt, flags=re.DOTALL)
             parsed = json.loads(m.group(0)) if m else {"raw_text": txt}
 

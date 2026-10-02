@@ -72,9 +72,9 @@ def llm_chatbot(
         out = rag._llm(
             messages=messages,
             max_tokens=req.max_tokens,
-            temperature=req.temperature,
+            temperature=req.temperature
         )
-        return ChatResponse(provider=out["provider"], reply=out["reply"])
+        return ChatResponse(provider=out["provider"], text=out["text"])
 
     except RuntimeError as exc:
         logger.error(f"LLM /llm/chatbot failed:\n{exc}")

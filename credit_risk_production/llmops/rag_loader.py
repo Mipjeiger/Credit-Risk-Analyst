@@ -3,7 +3,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import joblib
 import pandas as pd
@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+from llmops.llm_providers import call_llm
 
 # Configuration
 BASE_PATH = Path(__file__).resolve().parents[1]
@@ -19,14 +20,19 @@ LLM_PATH = BASE_PATH / "database" / "LLM"
 ENV_PATH = BASE_PATH / ".env"
 load_dotenv(ENV_PATH)
 
+# Define model names
+ModelName = Literal[
+    "Logistic Regression", "Random Forest", "Gradient Boosting",
+    "XGBoost", "K-Nearest Neighbors", "Decision Tree"
+]
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-
 class CreditRiskRAG:
-    def __init__(self, base_dir: Path = LLM_PATH):
+    def __init__(self, base_dir: Path | str = LLM_PATH):
         self.base = Path(base_dir)
         self.cfg = json.loads(
             (self.base / "outputs_llm" / "rag_config.json").read_text()
@@ -80,8 +86,13 @@ class CreditRiskRAG:
         self.groq_client = InferenceClient(token=groq_key) if groq_key else None
 
     # ------ ML Scoring ------
-    def score(self, row: pd.Series, model_name: str) -> dict[str, Any]:
+    def score(self, row: pd.Series, model_name: ModelName | None = None) -> dict[str, Any]:
         """Score a single row using the specified string model chosen from the model bundle."""
+        if model_name is None:
+            model_name = self.cfg.get("champion_model", list(self.models.keys())[0])
+        if model_name not in self.models:
+            raise KeyError(f"Unknown model '{model_name}, available models: {list(self.models.keys())}")
+
         X = pd.DataFrame(
             [row.reindex(self.model_features).values], columns=self.model_features
         )
@@ -93,7 +104,6 @@ class CreditRiskRAG:
                 except (KeyError, ValueError) as e:
                     logger.warning("LabelEncoder fallback for column %s: %s", col, e)
                     X[col] = 0
-                X[col] = X[col]
 
         # Scale with the FITTED scaler
         X_scaled = pd.DataFrame(self.scaler.transform(X), columns=X.columns)
@@ -102,7 +112,7 @@ class CreditRiskRAG:
         model = self.models[model_name]
         proba = model.predict_proba(X_scaled)[0]
         classes = list(model.classes_)
-        pos_idx = list(model.classes_).index(1) if 1 in list(model.classes_) else 0
+        pos_idx = list(model.classes_).index(1) if 1 in classes else 0
 
         class_probs = {
             f"class_{int(c)}_prob": round(float(p), 4) for c, p in zip(classes, proba)
@@ -117,38 +127,14 @@ class CreditRiskRAG:
 
     # ----- LLM Retrieval ------
     def _llm(self, messages, max_tokens=512, temperature=0.3):
-        # Huggingface Inference API
-        if self.hf_client:
-            try:
-                r = self.hf_client.chat.completions.create(
-                    model=self.cfg["hf_model"],
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
-                return {"text": r.choices[0].message.content, "provider": "huggingface"}
-            except (KeyError, ValueError) as e:
-                logger.error(f"❌ Huggingface Failed: {e}")
-                # Continue to fallback
-        # Fallback to Groq if available
-        if self.groq_client:
-            try:
-                r = self.groq_client.chat.completions.create(
-                    model=self.cfg["groq_model"],
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
-                return {
-                    "text": r.choices[0].message.content,
-                    "provider": "groq",
-                }
-            except (KeyError, ValueError) as e:
-                logger.error(f"❌ Groq Failed: {e}")
-                # Continue to fallback
-        # No provider available
-        raise RuntimeError(
-            "❌ No LLM provider available. Please check your API keys and configuration."
+        cfg = self.cfg.get("llm", {})
+        return call_llm(
+            messages=messages,
+            hf_model=cfg.get("llm", {}).get("hf_model", "Qwen/Qwen2.5-Coder-32B-Instruct"),
+            groq_model=cfg.get("llm", {}).get("groq_model", "openai/gpt-oss-20b"),
+            niner_model=cfg.get("llm", {}).get("9router_model", "sragent"),
+            max_tokens=max_tokens,
+            temperature=temperature
         )
 
     # ----- Decide ------
