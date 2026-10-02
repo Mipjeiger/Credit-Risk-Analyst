@@ -374,7 +374,6 @@ def card(title, subtitle="", body=""):
         unsafe_allow_html=True,
     )
 
-
 def metric_card(label, value, meta=""):
     st.markdown(
         f"""
@@ -469,7 +468,6 @@ def load_metrics():
         st.stop()
     return df
 
-
 @st.cache_data(ttl=60, show_spinner="Loading fraud metrics...")
 def load_fraud_metrics():
     if not FRAUD_METRIC.exists():
@@ -483,7 +481,6 @@ def load_fraud_metrics():
     })
     return df
 
-
 def load_portfolio_sample(n=5000):
     for path in [
         DS_DIR / "data" / "portfolio_sample.parquet",
@@ -493,7 +490,6 @@ def load_portfolio_sample(n=5000):
             return pd.read_parquet(path).head(n)
     return None
 
-
 # ============================================================
 # RETRIEVE MODEL CHOICES
 # ============================================================
@@ -502,7 +498,6 @@ DEFAULT_MODEL = "Gradient Boosting" if "Gradient Boosting" in MODEL_CHOICES else
 
 FRAUD_MODEL_CHOICES = fetch_fraud_model_choices()
 FRAUD_DEFAULT_MODEL = "XGBoost" if "XGBoost" in FRAUD_MODEL_CHOICES else FRAUD_MODEL_CHOICES[0]
-
 
 # ============================================================
 # SCORING
@@ -524,6 +519,28 @@ def score_one(model_name, raw):
     except requests.RequestException as e:
         raise RuntimeError(f"API /predict request failed: {e}") from e
 
+def score_all(raw):
+    rows = []
+    for name in MODEL_CHOICES:
+        try:
+            result = score_one(name, raw)
+            rows.append({
+                "model": name,
+                "predicted_class": result["predicted_class"],
+                "confidence": round(result["confidence"], 4),
+                "p_class_0": round(result["class_probabilities"].get("class_0", np.nan), 4),
+                "p_class_1": round(result["class_probabilities"].get("class_1", np.nan), 4),
+                "p_class_2": round(result["class_probabilities"].get("class_2", np.nan), 4),
+                "p_class_3": round(result["class_probabilities"].get("class_3", np.nan), 4),
+            })
+        except Exception as e:
+            rows.append({
+                "model": name,
+                "predicted_class": None,
+                "confidence": None,
+                "error": str(e),
+            })
+    return pd.DataFrame(rows)
 
 def fraud_score_one(model_name, raw):
     """Delegate to the FastAPI /fraud/predict endpoint"""
@@ -549,30 +566,48 @@ def fraud_score_one(model_name, raw):
     except requests.RequestException as e:
         raise RuntimeError(f"API unreachable: {e}") from e
 
+def fraud_applicant_input(prefix):
+    raw = {}
+    input_columns = st.columns(3)
 
-def score_all(raw):
+    for i, col in enumerate(FRAUD_FEATURES):
+        with input_columns[i % 3]:
+            key = f"{prefix}_{col}"
+
+            if col in FRAUD_LABEL_ENCODERS:
+                choices = list(FRAUD_LABEL_ENCODERS[col].classes_)
+                raw[col] = st.selectbox(col, choices, key=key)
+            else:
+                raw[col] = st.number_input(col, value=0.0, key=key)
+
+    return raw
+
+# Fraud scoring for all models
+def fraud_score_all(raw):
     rows = []
-    for name in MODEL_CHOICES:
+    for name in FRAUD_MODEL_CHOICES:
         try:
-            result = score_one(name, raw)
-            rows.append({
-                "model": name,
-                "predicted_class": result["predicted_class"],
-                "confidence": round(result["confidence"], 4),
-                "p_class_0": round(result["class_probabilities"].get("class_0", np.nan), 4),
-                "p_class_1": round(result["class_probabilities"].get("class_1", np.nan), 4),
-                "p_class_2": round(result["class_probabilities"].get("class_2", np.nan), 4),
-                "p_class_3": round(result["class_probabilities"].get("class_3", np.nan), 4),
-            })
+            result = fraud_score_one(name, raw)
+            probs = result["class_probabilities"]
+            rows.append(
+                {
+                    "model": name,
+                    "predicted_class": result["predicted_class"],
+                    "confidence": round(result["confidence"], 4),
+                    "p_class_0": round(probs.get("class_0", np.nan), 4),
+                    "p_class_1": round(probs.get("class_1", np.nan), 4),
+                }
+            )
         except Exception as e:
-            rows.append({
-                "model": name,
-                "predicted_class": None,
-                "confidence": None,
-                "error": str(e),
-            })
+            rows.append(
+                {
+                    "model": name,
+                    "predicted_class": None,
+                    "confidence": None,
+                    "error": str(e),
+                }
+            )
     return pd.DataFrame(rows)
-
 
 # ============================================================
 # LLM EXPLANATION
@@ -687,7 +722,7 @@ with st.sidebar:
             "📈 Model Monitoring",
             "🛡️ Fraud Risk",
             "💬 LLM Explain",
-            "🤖 Chatbot",
+            "🤗 Chatbot",
         ],
         label_visibility="collapsed",
         key="main_navigation",
@@ -821,7 +856,6 @@ def tab_overview():
             "to enable portfolio distribution charts."
         )
 
-
 # ============================================================
 # APPLICANT INPUT COMPONENT
 # ============================================================
@@ -840,7 +874,6 @@ def applicant_input(prefix):
                 raw[col] = st.number_input(col, value=0.0, key=key)
 
     return raw
-
 
 # ============================================================
 # TAB 2 — SCORE APPLICANT
@@ -964,7 +997,7 @@ def tab_monitoring():
 
     metrics = load_metrics().copy()
 
-    if "roc_auc" in metrics.columns:
+    if "roc_auc" in metrics.columns:    
         metrics["gini"] = 2 * metrics["roc_auc"] - 1
     else:
         metrics["gini"] = np.nan
@@ -1025,50 +1058,169 @@ def tab_monitoring():
 def tab_fraud():
     st.markdown('<div class="section-title">Fraud Risk</div>', unsafe_allow_html=True)
 
-    st.markdown(
-        """
-        <div class="ui-card">
-            <div class="card-title">🛡️ Fraud Risk Preview</div>
-            <div class="card-subtitle">
-                Fraud model integration is currently under development.
+    st.caption(
+        "Applicant-level fraud scoring. The fraud model is separate "
+        "from the credit-risk models and uses its own feature set."
+    )
+
+    if not FRAUD_FEATURES:
+        st.warning(
+            "No fraud feature metadata found."
+            f"Expected 'feature_columns' in {FRAUD_META}."
+        )
+        return
+
+    left, right = st.columns([1.5, 1], gap="large")
+
+    with left:
+        card(
+             "Applicant Fraud Profile",
+            "Enter applicant-level signals used by the fraud pipeline.",
+        )
+
+        model_name = st.selectbox(
+            "Fraud model",
+            FRAUD_MODEL_CHOICES,
+            index=FRAUD_MODEL_CHOICES.index(FRAUD_DEFAULT_MODEL),
+            key="fraud_model",
+        )
+        raw = fraud_applicant_input("fraud")
+
+        evaluate = st.button(
+            "Evaluate Fraud Risk",
+            type="primary",
+            use_container_width=True,
+            key="fraud_evaluate",
+        )
+
+    with right:
+        st.markdown(
+            """
+            <div class="ui-card">
+                <div class="card-title">Fraud Scoring Workflow</div>
+                <div class="card-subtitle">Production fraud inference path</div>
+                <div style="margin-top:1rem;line-height:2;font-size:0.88rem;">
+                    <div>① Applicant features</div><div>↓</div>
+                    <div>② Label encoding</div><div>↓</div>
+                    <div>③ Feature scaling</div><div>↓</div>
+                    <div>④ Fraud challenger model</div><div>↓</div>
+                    <div>⑤ Fraud probability + class</div>
+                </div>
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        card("Fraud Probability", "XGBoost / LightGBM", "Applicant-level fraud probability.")
-    with c2:
-        card("Fraud Typology", "Policy-grounded", "Account takeover, synthetic ID, first-party fraud, etc.")
-    with c3:
-        card("Red Flags", "Rule IDs", "Policy citations and operational signals.")
+    if evaluate:
+        with st.spinner("Scoring fraud risk..."):
+            try:
+                result = fraud_score_one(model_name, raw)
 
-    st.markdown('<div class="section-title">Planned Fraud Pipeline</div>', unsafe_allow_html=True)
+                # Prediction card
+                predicted = result["predicted_class"]
+                confidence = result["confidence"]
 
-    st.code(
-        """
-Incoming application
-        │
-        ├── Device / IP signals
-        ├── Velocity counters
-        ├── Beneficiary / merchant identity
-        └── Cross-border / channel flags
-        │
-        ▼
-Fraud ML model
-        │
-        ├── fraud_probability
-        ├── typology
-        ├── red_flags
-        ├── policy_refs
-        ├── recommended_action
-        └── expected_loss
-        """,
-        language="text",
-    )
+                if predicted == 0:
+                    st.markdown(
+                        f"""
+                        <div class="decision-approved">
+                            <div class="decision-title">
+                                ✓ Fraud prediction: Class {predicted}
+                            </div>
+                            <div style="margin-top:0.3rem;color:#047857;">
+                                Model confidence: <b>{confidence:.2%}</b>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f"""
+                        <div class="decision-review">
+                            <div class="decision-title">
+                                ! Fraud prediction: Class {predicted}
+                            </div>
+                            <div style="margin-top:0.3rem;color:#9a3412;">
+                                Model confidence: <b>{confidence:.2%}</b>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
+                col1, col2 = st.columns([1, 1])
+
+                with col1:
+                    proba_df = pd.DataFrame(
+                        {
+                            "class": list(result["class_probabilities"].keys()),
+                            "probability": list(result["class_probabilities"].values()),
+                        }
+                    )
+                    if proba_df.empty:
+                        st.info("No class probabilities returned by the fraud model.")
+                    else:
+                        fig = px.bar(proba_df, x="class", y="probability", title="Fraud Class Probabilities")
+                        fig.update_layout(yaxis_tickformat=".0%", height=350, plot_bgcolor="white", paper_bgcolor="white")
+                        st.plotly_chart(fig, width='stretch', theme=None)
+
+                with col2:
+                    st.markdown(
+                        '<div class="section-title">Fraud Inference Result</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.json(
+                        {
+                            "model": result["model"],
+                            "predicted_class": result["predicted_class"],
+                            "confidence": round(result["confidence"], 4),
+                            "class_probabilities": result["class_probabilities"]
+                        }
+                    )
+
+                # ---- Typology + red flags (placeholders until wired to a service) ----
+                st.markdown(
+                    '<div class="section-title">Typology & Red Flags</div>',
+                    unsafe_allow_html=True,
+                )
+
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    card(
+                        "Fraud Probability",
+                        f"{confidence:.2%}",
+                        f"Model: {result['model']}",
+                    )
+                with c2:
+                    card(
+                        "Fraud Typology",
+                        "Not yet wired",
+                        "Account takeover, synthetic ID, first-party fraud, etc.",
+                    )
+                with c3:
+                    card(
+                        "Red Flags",
+                        "Not yet wired",
+                        "Policy citations and operational signals.",
+                    )
+
+                # ---- Compare across all fraud models ----
+                st.markdown(
+                    '<div class="section-title">All Fraud Challenger Models</div>',
+                    unsafe_allow_html=True,
+                )
+
+                comparison = fraud_score_all(raw)
+                st.dataframe(
+                    comparison,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            except Exception:
+                st.error("Fraud prediction failed.")
+                st.code(traceback.format_exc())
 
 # ============================================================
 # TAB 5 — LLM EXPLAIN

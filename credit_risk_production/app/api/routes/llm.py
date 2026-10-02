@@ -48,4 +48,41 @@ def llm_query(
             ),
         ) from exc
 
-@router.post("/llm/chatbot", response_model=DecideResponse)
+# -------------------------------------------
+# LLM Chatbot endpoint
+# -------------------------------------------
+@router.post("/llm/chatbot", response_model=ChatResponse)
+def llm_chatbot(
+    req: ChatRequest,
+    rag: Annotated[CreditRiskRAG, Depends(get_rag)]
+) -> ChatResponse:
+    """Endpoint for LLM-based chatbot queries and responses."""
+    try:
+        messages = [m.model_dump() for m in req.messages]
+
+        if not any(m["role"] == "system" for m in messages):
+            messages.insert(
+                0,
+                {
+                    "role": "system",
+                    "content": req.system_prompt or DEFAULT_CHATBOT_SYSTEM_PROMPT,
+                }
+            )
+
+        out = rag._llm(
+            messages=messages,
+            max_tokens=req.max_tokens,
+            temperature=req.temperature,
+        )
+        return ChatResponse(provider=out["provider"], reply=out["reply"])
+
+    except RuntimeError as exc:
+        logger.error(f"LLM /llm/chatbot failed:\n{exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    except Exception as exc:  # noqa: BLE001
+        logger.error("LLM /llm/chatbot failed:\n%s", traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chatbot failed: {type(exc).__name__}: {exc}",
+        ) from exc

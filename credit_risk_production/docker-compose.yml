@@ -41,11 +41,9 @@ services:
     ports:
       - "5540:5540"
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
     networks:
       - credit_risk_network
-
 
   mlflow:
     build:
@@ -90,10 +88,37 @@ services:
       - postgres
     volumes:
       - .:/app
+      - ../data_science:/data_science
     ports:
       - "8000:8000"
     networks:
       - credit_risk_network
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.streamlit
+    container_name: streamlit
+    env_file:
+      - .env
+    environment:
+      API_BASE_URL: http://api:8000
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY}
+      CR_PROJECT_DIR: /app
+    depends_on:
+      - api
+    volumes:
+      - .:/app
+      - ../data_science:/data_science
+    ports:
+      - "8501:8501"
+    networks:
+      - credit_risk_network
+    command: >
+      streamlit run deploys/app.py
+      --server.port=8501
+      --server.address=0.0.0.0
+      --server.headless=true
 
   prometheus:
     image: prom/prometheus:latest
