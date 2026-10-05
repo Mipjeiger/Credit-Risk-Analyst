@@ -138,7 +138,12 @@ class FraudRiskRAG:
         model = self.models[model_name] # get the model object
 
         # 1. Align features with the model's expected features
-        X = pd.DataFrame([row.reindex(self.model_features).values], columns=self.model_features)
+        try:
+            X = pd.DataFrame([row.reindex(self.model_features).values], columns=self.model_features)
+        except Exception:
+            # Fallback: handles dictionary conversion
+            row_dict = row.to_dict() if hasattr(row, "to_dict") else dict(row)
+            X = pd.DataFrame([row_dict]).reindex(columns=self.model_features)
 
         # 2. Encode categorical features using existing label encoders
         for col, le in self.label_encoders.items():
@@ -185,34 +190,39 @@ class FraudRiskRAG:
         fp = ml["primary_fraud_probability"]
         th = self.cfg["thresholds"]
 
+        # Model confidence inference
+        predicted_flag = ml["predicted_flag"]
+        predicted_prob = ml["class_probabilities"].get(f"class_{predicted_flag}", fp)
+
         # AUTO ALLOW
         if fp < th["auto_allow_below"]:
             return {
+                **ml,
                 "decision_route": "AUTO_ALLOW",
                 "provider": "ML_Policy_Engine",
-                **ml,
+                "predicted_flag": predicted_flag,
                 "fraud_probability": fp,
                 "fraud_probability_100": round(fp * 100, 2),
                 "fraud_band": "Low",
                 "typology": "unknown",
                 "recommended_action": "allow",
-                "confidence": fp,
-                "needs_human_review": True
+                "confidence": float(predicted_prob),
+                "needs_human_review": False if float(predicted_prob) > 0.6 else True
             }
 
         # AUTO BLOCK
         if fp > th["auto_block_above"]:
             return {
+                **ml,
                 "decision_route": "AUTO_BLOCK",
                 "provider": "ML_Policy_Engine",
-                **ml,
                 "fraud_probability": fp,
                 "fraud_probability_100": round(fp * 100, 2),
                 "fraud_band": "Critical",
                 "typology": "unknown",
                 "recommended_action": "block",
-                "confidence": fp,
-                "needs_human_review": False,
+                "confidence": float(predicted_prob),
+                "needs_human_review": True if float(predicted_prob) < 0.6 else False
             }
 
         # RAG + LLM Decision

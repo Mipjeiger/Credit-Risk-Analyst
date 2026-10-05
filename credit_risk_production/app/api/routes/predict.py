@@ -88,9 +88,11 @@ def predict(
         if customer_id != "unknown":
             hour_key = time.strftime("%Y-%m-%dT%H")
             try:
-                record_decision(customer_id, float(ml.get("risk_score", 0.0)), hour_key)
+                # Use primary risk probability returned by rag.score()
+                risk_val = float(ml.get("risk_score", ml.get("risk_score", 0.0)))
+                record_decision(customer_id, risk_val, hour_key)
             except Exception as exc:
-                logger.warning(f"[predict] record_decision failed: {exc}")
+                logger.warning(f"❌ [predict] record_decision failed: {exc}")
 
         REQUEST_COUNT.labels(endpoint="/predict", method="POST", status="200").inc()
         return PredictResponse(**{k: v for k, v in ml.items() if k in PredictResponse.model_fields})
@@ -98,9 +100,13 @@ def predict(
     except HTTPException:
         raise
 
-    except (KeyError, ValueError) as e:
+    except EOFError as e:
+        logger.error(f"[predict] Non-interactive input error (EOFError): {e}")
         REQUEST_COUNT.labels(endpoint="/predict", method="POST", status="500").inc()
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500, 
+            detail="Execution failed due to non-interactive environment (EOFError)."
+        ) from e
 
     except Exception as e:
         REQUEST_COUNT.labels(

@@ -7,12 +7,31 @@ from typing import Any, Literal
 
 import joblib
 import pandas as pd
+
+# Set up disabled telemetry for ChromaDB
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+os.environ.setdefault("CHROMA_TELEMETRY_DISABLED", "True")
+
+logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
+
+# Disable interactive CLI prompts across libraries
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+os.environ["DISABLE_INTERACTIVE_INPUT"] = "1"
+
 from chromadb.config import Settings
 from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from llmops.llm_providers import call_llm
+
+import warnings
+warnings.filterwarnings(
+    "ignore", message="X has feature names, but .* was fitted without feature names", category=UserWarning
+)
 
 # Configuration
 BASE_PATH = Path(__file__).resolve().parents[1]
@@ -26,9 +45,15 @@ ModelName = Literal[
     "XGBoost", "K-Nearest Neighbors", "Decision Tree"
 ]
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
-)
+# Try payload encoding for the classes_
+FIRST_PROD_BIN = {
+        "PL": "P1",
+        "CC": "P2",
+        "ConsumerLoan": "P3",
+        "others": "P4",
+    }
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 class CreditRiskRAG:
@@ -46,7 +71,7 @@ class CreditRiskRAG:
         self.model_features = self.model_bundle["feature_columns"]
 
         self.models = self.model_bundle["models"]
-        self.scaler = self.model_bundle["scaler"]
+        self.scaler = self.model_bundle["scaler"]   
         self.label_encoders = self.model_bundle.get("label_encoders", {})
 
         # Build a mapping dict for each encoder to handle unseen values safely
@@ -85,25 +110,36 @@ class CreditRiskRAG:
         self.hf_client = InferenceClient(token=hf_key) if hf_key else None
         self.groq_client = InferenceClient(token=groq_key) if groq_key else None
 
+    # ---- Transform encoders's classes to fetch the index for unseen values ----
+    def to_first_prod(self, v):
+        return FIRST_PROD_BIN.get(v, "P4")
+    
     # ------ ML Scoring ------
     def score(self, row: pd.Series, model_name: ModelName | None = None) -> dict[str, Any]:
         """Score a single row using the specified string model chosen from the model bundle."""
         if model_name is None:
             model_name = self.cfg.get("champion_model", list(self.models.keys())[0])
         if model_name not in self.models:
-            raise KeyError(f"Unknown model '{model_name}, available models: {list(self.models.keys())}")
+            raise KeyError(f"Unknown model '{model_name}', available models: {list(self.models.keys())}")
 
-        X = pd.DataFrame(
-            [row.reindex(self.model_features).values], columns=self.model_features
-        )
+        # Ensure row is a pd.Series
+        if isinstance(row, dict):
+            row = pd.Series(row)
+
+        # 1. Align features with the model's expected features
+        X = pd.DataFrame([row.reindex(self.model_features).to_dict()])
+        X = X.fillna(-99999)
+
+        if "first_prod_enq2" in X.columns:
+            before = X["first_prod_enq2"].iloc[0]
+            X["first_prod_enq2"] = X["first_prod_enq2"].map(self.to_first_prod)
+            after = X["first_prod_enq2"].iloc[0]
+            logger.info("first_prod_enq2: %r -> %r", before, after)
 
         for col, le in self.label_encoders.items():
-            if col in X.columns:
-                try:
-                    X[col] = le.transform(X[col].astype(str))
-                except (KeyError, ValueError) as e:
-                    logger.warning("LabelEncoder fallback for column %s: %s", col, e)
-                    X[col] = 0
+            if col in X.columns and col in self.label_mappings:
+                mapping = self.label_mappings[col]
+                X[col] = X[col].astype(str).map(lambda v: mapping.get(v, mapping["<UNKNOWN>"]))
 
         # Scale with the FITTED scaler
         X_scaled = pd.DataFrame(self.scaler.transform(X), columns=X.columns)
@@ -122,7 +158,7 @@ class CreditRiskRAG:
             "model_used": model_name,
             "predicted_flag": int(model.predict(X_scaled)[0]),
             "class_probabilities": class_probs,
-            "primary_risk_probability": float(proba[pos_idx]),
+            "primary_risk_probability": float(proba[pos_idx])
         }
 
     # ----- LLM Retrieval ------
@@ -130,21 +166,28 @@ class CreditRiskRAG:
         cfg = self.cfg.get("llm", {})
         return call_llm(
             messages=messages,
-            hf_model=cfg.get("llm", {}).get("hf_model", "Qwen/Qwen2.5-Coder-32B-Instruct"),
-            groq_model=cfg.get("llm", {}).get("groq_model", "openai/gpt-oss-20b"),
-            niner_model=cfg.get("llm", {}).get("9router_model", "sragent"),
+            hf_model=cfg.get("hf_model", "Qwen/Qwen2.5-Coder-32B-Instruct"),
+            groq_model=cfg.get("groq_model", "openai/gpt-oss-20b"),
+            niner_model=cfg.get("9router_model", "sragent"),
             max_tokens=max_tokens,
             temperature=temperature
         )
 
     # ----- Decide ------
-    def decide(self, row: pd.Series) -> dict[str, Any]:
+    def decide(self, row: pd.Series | dict) -> dict[str, Any]:
         """
         Main function deciding on a credit risk scoring and LLM retrieval to decide
         Using LLM or action by ML models
         """
+        if isinstance(row, dict):
+            row = pd.Series(row)
+
         ml = self.score(row)
         rp = ml["primary_risk_probability"]
+
+        # Model confidence inference
+        predicted_flag = ml["predicted_flag"]
+        predicted_prob = ml["class_probabilities"].get(f"class_{predicted_flag}", rp)
 
         # Define logic auto reject
         if rp < self.cfg["thresholds"]["auto_reject_below"]:
@@ -154,7 +197,9 @@ class CreditRiskRAG:
                 **ml,
                 "risk_score": rp,
                 "risk_score_100": round(rp * 100, 2),
-                "recommend_action": "Decline - risk score below cut-off",
+                "recommended_action": "Decline - risk score below cut-off",
+                "confidence": float(predicted_prob),
+                "needs_human_review": float(predicted_prob) < 0.6
             }
 
         # Define logic auto approve
@@ -166,6 +211,8 @@ class CreditRiskRAG:
                 "risk_score": rp,
                 "risk_score_100": round(rp * 100, 2),
                 "recommended_action": "Approve - strong profile",
+                "confidence": float(predicted_prob),
+                "needs_human_review": False
             }
 
         # RAG path

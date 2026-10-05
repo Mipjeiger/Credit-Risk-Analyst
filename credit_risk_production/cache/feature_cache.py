@@ -38,7 +38,12 @@ def get_or_score(prefix: str, payload: dict, scorer, ttl: int = 300) -> dict:
     cached = r.get(key)
 
     if cached:
-        return json.loads(cached)
+        try:
+            # Decode bytes to string before parsing JSON
+            cached_str = cached.decode("utf-8") if isinstance(cached, bytes) else cached
+            return json.loads(cached_str)
+        except Exception:
+            pass
 
     # Compute the score using the provided scorer function
     result = scorer(payload)
