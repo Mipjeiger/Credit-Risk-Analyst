@@ -21,7 +21,8 @@ class DecideResponse(BaseModel):
     key_driver: list[str] = []
     policy_refs: list[str] = []
     fraud_indicators: list[str] = []
-    confidence: float = 0.0
+    confidence: Optional[float] = None
+    need_human_review: bool = False
 
 class HealthResponse(BaseModel):
     status: str
