@@ -1,6 +1,8 @@
 services:
   superset:
-    image: apache/superset:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: credit_risk_superset
     ports:
       - "8088:8088"
@@ -12,6 +14,12 @@ services:
     volumes:
       - ./superset_config.py:/app/pythonpath/superset_config.py:ro
       - superset_home:/app/superset_home
+    networks:
+      - credit_risk_network
 
 volumes:
   superset_home:
+
+networks:
+  credit_risk_network:
+    external: true

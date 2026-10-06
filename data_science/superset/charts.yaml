@@ -19,10 +19,9 @@ charts:
     viz_type: table
     description: "All challengers ranked by ROC AUC."
     params:
-      query_mode: aggregate
-      groupby: [model_name]
-      metrics: [roc_auc, f1, precision, recall, accuracy]
-      order_desc: true
+      query_mode: raw
+      all_columns: [model_name, roc_auc, f1_score, precision, recall, accuracy, roc_auc_rank, f1_rank]
+      order_by_cols: ['["roc_auc", false]']
       row_limit: 20
 
   # 2. Gini trend over time
@@ -34,7 +33,10 @@ charts:
       x_axis: scored_at
       time_grain_sqla: P1M
       granularity_sqla: scored_at
-      metrics: [gini]
+      metrics:
+        - label: "AVG(Gini)"
+          expressionType: SQL
+          sqlExpression: "AVG(gini)"
       groupby: [model_name]
       row_limit: 1000
 
@@ -46,7 +48,10 @@ charts:
       x_axis: scored_at
       time_grain_sqla: P1M
       granularity_sqla: scored_at
-      metrics: [ks]
+      metrics:
+        - label: "AVG(KS)"
+          expressionType: SQL
+          sqlExpression: "AVG(ks)"
       groupby: [model_name]
 
   # 4. PSI heatmap — model × month
@@ -57,7 +62,10 @@ charts:
     params:
       x_axis: month
       y_axis: model_name
-      metric: psi
+      metric:
+        label: "AVG(PSI)"
+        expressionType: SQL
+        sqlExpression: "AVG(psi)"
       linear_color_scheme: blue_white_yellow
 
   # 5. Monitoring alerts table
@@ -75,7 +83,10 @@ charts:
     dataset: v_approval_distribution
     viz_type: pie
     params:
-      metric: applications
+      metric:
+        label: "Applications"
+        expressionType: SQL
+        sqlExpression: "COUNT(*)"
       groupby: [approved_flag]
       donut: true
 
@@ -84,7 +95,10 @@ charts:
     dataset: v_score_band
     viz_type: bar
     params:
-      metrics: [applications]
+      metrics:
+        - label: "Applications"
+          expressionType: SQL
+          sqlExpression: "COUNT(*)"
       groupby: [score_band]
       columns: [approved_flag]
       row_limit: 100
