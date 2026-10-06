@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: grafana
-          image: credit_risk_production-grafana/grafana:latest
+          image: grafana/grafana:latest
           envFrom:
             - secretRef:
                 name: grafana-secret

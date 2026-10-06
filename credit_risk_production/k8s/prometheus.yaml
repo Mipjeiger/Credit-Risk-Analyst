@@ -14,6 +14,36 @@ data:
             regex: credit-risk-api
             action: keep
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: credit-risk
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-pod-discovery
+  namespace: credit-risk
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-pod-discovery
+  namespace: credit-risk
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: credit-risk
+roleRef:
+  kind: Role
+  name: prometheus-pod-discovery
+  apiGroup: rbac.authorization.k8s.io
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,12 +56,24 @@ spec:
     metadata:
       labels: { app: prometheus }
     spec:
+      serviceAccountName: prometheus
       containers:
         - name: prometheus
-          image: credit_risk_production-prometheus/prometheus:latest
+          image: prom/prometheus:latest
           ports: [{ containerPort: 9090 }]
           volumeMounts:
             - { name: config, mountPath: /etc/prometheus }
       volumes:
         - name: config
           configMap: { name: prometheus-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: credit-risk
+spec:
+  selector: { app: prometheus }
+  ports:
+    - port: 9090
+      targetPort: 9090

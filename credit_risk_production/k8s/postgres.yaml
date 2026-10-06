@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:15-alpine
+          image: pgvector/pgvector:pg15
           env:
             # Prevent 'lost+found' directory error on initial PVC mount
             - name: PGDATA

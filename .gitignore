@@ -13,3 +13,4 @@ data_science/superset/.env
 **__pycache__
 data_science/deploys/.env
 credit_risk_production/.mypy_cache
+**.ruff_cache

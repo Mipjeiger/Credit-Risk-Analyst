@@ -13,11 +13,19 @@ spec:
     spec:
       containers:
         - name: mlflow
-          image: credit_risk_production-mlflow/credit-risk-mlflow:latest
+          image: credit-risk-mlflow:0.1
+          imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
                 name: mlflow-postgres-secret
           ports: [{ containerPort: 5000 }]
+          volumeMounts:
+            - name: mlartifacts
+              mountPath: /mlartifacts
+      volumes:
+        - name: mlartifacts
+          persistentVolumeClaim:
+            claimName: mlartifacts
 ---
 apiVersion: v1
 kind: Service
@@ -26,4 +34,15 @@ metadata:
   namespace: credit-risk
 spec:
   selector: { app: mlflow }
-  ports: [{ port: 5000, targetPort: 5000 }
+  ports: [{ port: 5000, targetPort: 5000 }]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlartifacts
+  namespace: credit-risk
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
