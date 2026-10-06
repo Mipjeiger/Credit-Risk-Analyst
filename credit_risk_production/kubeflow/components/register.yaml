@@ -1,0 +1,10 @@
+name: register
+inputs:
+  - { name: mlflow_uri, type: String }
+  - { name: model_name, type: String }
+  - { name: metric, type: Float }
+implementation:
+  container:
+    image: python:3.11-slim
+    command: ["python", "-c"]
+    args: ["print('Register component placeholder')"]

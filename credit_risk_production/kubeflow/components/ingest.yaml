@@ -1,0 +1,10 @@
+name: ingest
+inputs:
+  - { name: data_path, type: String }
+outputs:
+  - { name: out_data, type: Artifact }
+implementation:
+  container:
+    image: python:3.11-slim
+    command: ["python", "-c"]
+    args: ["print('Ingest component placeholder')"]

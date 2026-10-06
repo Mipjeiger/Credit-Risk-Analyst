@@ -1,0 +1,12 @@
+name: evaluate
+inputs:
+  - { name: model, type: Artifact }
+  - { name: data, type: Artifact }
+  - { name: mlflow_uri, type: String }
+outputs:
+  - { name: metric, type: Float }
+implementation:
+  container:
+    image: python:3.11-slim
+    command: ["python", "-c"]
+    args: ["print('Evaluate component placeholder')"]

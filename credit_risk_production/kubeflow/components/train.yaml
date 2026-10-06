@@ -1,0 +1,12 @@
+name: train
+inputs:
+  - { name: data, type: Artifact }
+  - { name: n_estimators, type: Integer }
+  - { name: mlflow_uri, type: String }
+outputs:
+  - { name: out_dir, type: Artifact }
+implementation:
+  container:
+    image: python:3.11-slim
+    command: ["python", "-c"]
+    args: ["print('Train component placeholder')"]
