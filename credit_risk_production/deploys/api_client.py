@@ -43,3 +43,18 @@ def explain(features: dict, prediction: dict):
     )
     r.raise_for_status()
     return r.json()
+
+def chatbot(messages, max_tokens: int = 512, temperature: float = 0.3, system_prompt: str | None = None):
+    """Calls POST /llm/chatbot - LLM chatbot for production support"""
+    payload = {
+        "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+        "max_tokens": max_tokens,
+        "temperature": temperature
+    }
+
+    if system_prompt:
+        payload["system_prompt"] = system_prompt
+
+    r = requests.post(f"{API_BASE_URL}/llm/chatbot", json=payload, timeout=60)
+    r.raise_for_status()
+    return r.json()

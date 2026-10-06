@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import joblib
 from dotenv import load_dotenv
-from api_client import predict as api_predict, health as api_health
+from api_client import predict as api_predict, health as api_health, chatbot as api_chatbot
 
 # ============================================================
 # CONFIG
@@ -622,7 +622,6 @@ SYSTEM_PROMPT = (
     "Do not invent numbers that are not in the input."
 )
 
-
 def explain_prediction(result, raw):
     if not HF_TOKEN:
         return "⚠️ HUGGINGFACE_API_KEY is not set. Cannot call the LLM."
@@ -739,7 +738,7 @@ with st.sidebar:
         </div>
         <div style="margin-top:1rem;font-size:0.72rem;color:#9ca3af;">MODELS</div>
         <div style="font-size:0.9rem;font-weight:700;margin-top:0.25rem;">
-            {len(MODEL_CHOICES)} challengers
+            {len(MODEL_CHOICES)} Machine learning
         </div>
         <div style="margin-top:1rem;font-size:0.72rem;color:#9ca3af;">FEATURES</div>
         <div style="font-size:0.9rem;font-weight:700;margin-top:0.25rem;">
@@ -751,7 +750,6 @@ with st.sidebar:
 
 # Inject theme AFTER sidebar so theme_mode is set
 inject_theme()
-
 
 # ============================================================
 # HEADER
@@ -784,7 +782,7 @@ def tab_overview():
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
-        metric_card("Challenger models", len(MODEL_CHOICES), "Active model bundle")
+        metric_card("Machine Learning Models", len(MODEL_CHOICES), "Active model bundle")
 
     with c2:
         metric_card("Features", len(FEATURES), "Production feature set")
@@ -1253,10 +1251,10 @@ def tab_explain():
                 <div class="card-title">LLM Architecture</div>
                 <div class="card-subtitle">Grounded business explanation</div>
                 <div style="margin-top:1rem;line-height:2;font-size:0.88rem;">
-                    <div>① ML prediction</div><div>↓</div>
-                    <div>② Probability</div><div>↓</div>
-                    <div>③ Applicant features</div><div>↓</div>
-                    <div>④ Hugging Face Router</div><div>↓</div>
+                    <div>① Features input</div><div>↓</div>
+                    <div>② ML Prediction</div><div>↓</div>
+                    <div>③ Confidence Score</div><div>↓</div>
+                    <div>④ LLM API Models router</div><div>↓</div>
                     <div>⑤ Business explanation</div>
                 </div>
             </div>
@@ -1319,72 +1317,69 @@ def tab_explain():
 # TAB 6 — CHATBOT
 # ============================================================
 def tab_chatbot():
-    st.header("🤖 Credit Risk Chatbot")
+    try:
+        st.header("🤗 Credit Risk Chatbot")
 
-    st.caption(
-        "Ask questions about policies, credit risk, or how the model works. "
-        "Conversation history is kept for this session only."
-    )
-
-    if "chatbot_messages" not in st.session_state:
-        st.session_state.chatbot_messages = [
-            {
-                "role": "assistant",
-                "content": "Hello! I'm your Credit Risk Assistant. "
-                           "Ask me about policies, credit scoring, "
-                           "or the ML models behind this dashboard.",
-            }
-        ]
-
-    for msg in st.session_state.chatbot_messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    if user_prompt := st.chat_input("Ask about credit risk...", key="chatbot_input"):
-        st.session_state.chatbot_messages.append(
-            {"role": "user", "content": user_prompt}
-        )
-        with st.chat_message("user"):
-            st.markdown(user_prompt)
-
-        with st.chat_message("assistant"):
-            placeholder = st.empty()
-
-            try:
-                if not HF_TOKEN:
-                    raise RuntimeError("HUGGINGFACE_API_KEY is not set.")
-
-                api_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + [
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.chatbot_messages
-                ]
-
-                response = requests.post(
-                    HF_ROUTER_URL,
-                    headers={
-                        "Authorization": f"Bearer {HF_TOKEN}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": HF_LLM_MODEL,
-                        "messages": api_messages,
-                        "max_tokens": 512,
-                        "temperature": 0.3,
-                    },
-                    timeout=45,
-                )
-                response.raise_for_status()
-                full_response = response.json()["choices"][0]["message"]["content"].strip()
-
-            except Exception as e:
-                full_response = f"❌ LLM call failed: {e}"
-
-            placeholder.markdown(full_response)
-
-        st.session_state.chatbot_messages.append(
-            {"role": "assistant", "content": full_response}
+        st.caption(
+            "Ask questions about policies, credit risk, or how the model works. "
+            "Conversation history is kept for this session only."
         )
 
+        if "chatbot_messages" not in st.session_state:
+            st.session_state.chatbot_messages = [
+                {
+                    "role": "assistant",
+                    "content": "Hello! I'm your Credit Risk Assistant. "
+                            "Ask me about policies, credit scoring, "
+                            "or the ML models behind this dashboard.",
+                }
+            ]
+
+        for msg in st.session_state.chatbot_messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        if user_prompt := st.chat_input("Ask about credit risk...", key="chatbot_input"):
+            st.session_state.chatbot_messages.append(
+                {"role": "user", "content": user_prompt}
+            )
+            with st.chat_message("user"):
+                st.markdown(user_prompt)
+
+            with st.chat_message("assistant"):
+                placeholder = st.empty()
+
+                try:
+                    api_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + [
+                        {"role": m["role"], "content": m["content"]}
+                        for m in st.session_state.chatbot_messages
+                    ]
+
+                    result = api_chatbot(
+                        messages=api_messages,
+                        max_tokens=512,
+                        temperature=0.3,
+                        system_prompt=SYSTEM_PROMPT
+                    )
+                    full_response = result["text"]
+
+                except requests.HTTPError as e:
+                    body = e.response.text[:300] if e.response is not None else ""
+                    code = e.response.status_code if e.response is not None else "?"
+                    full_response = f"❌ API error {code}: {body}"
+                
+                except requests.RequestException as e:
+                    full_response = f"❌ API request failed: {e}"
+
+                placeholder.markdown(full_response)
+
+            st.session_state.chatbot_messages.append(
+                {"role": "assistant", "content": full_response}
+            )
+
+    except Exception:
+        st.error("Chatbot failed.")
+        st.code(traceback.format_exc())
 
 # ============================================================
 # ROUTER
@@ -1399,7 +1394,7 @@ elif page == "🛡️ Fraud Risk":
     tab_fraud()
 elif page == "💬 LLM Explain":
     tab_explain()
-elif page == "🤖 Chatbot":
+elif page == "🤗 Chatbot":
     tab_chatbot()
 
 
