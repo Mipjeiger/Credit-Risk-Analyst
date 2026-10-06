@@ -6,8 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY docker/requirements_streamlit.txt . /tmp/requirements_streamlit.txt
-RUN pip install --no-cache-dir -r /tmp/requirements_streamlit.txt
+COPY docker/requirements_streamlit.txt .
+RUN pip install --no-cache-dir -r requirements_streamlit.txt
 
 COPY . /app
 

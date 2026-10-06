@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir -r requirements_api.txt \
 
 # 4. Copy source code
 COPY app/ ./app/
+COPY cache/ ./cache/
 COPY ml/ ./ml/
 COPY llmops/ ./llmops/
 COPY database/LLM/ ./database/LLM/
